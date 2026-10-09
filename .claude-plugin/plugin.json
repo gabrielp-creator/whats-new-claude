@@ -6,6 +6,9 @@
   "author": { "name": "Gabriel Philipson" },
   "homepage": "https://github.com/gabrielp-creator/whats-new-claude#readme",
   "repository": "https://github.com/gabrielp-creator/whats-new-claude",
+  "documentationUrl": "https://github.com/gabrielp-creator/whats-new-claude#readme",
+  "supportUrl": "https://github.com/gabrielp-creator/whats-new-claude/issues",
+  "privacyPolicyUrl": "https://github.com/gabrielp-creator/whats-new-claude/blob/main/PRIVACY.md",
   "license": "MIT",
   "keywords": ["changelog", "release-notes", "claude-code", "briefs"],
   "userConfig": {
