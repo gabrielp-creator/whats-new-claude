@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (2026-10-09)
+- Fix: every `/whats-new` command stopped at its first step. The skill passes `--data` to each
+  script, and the argument reader rejected it as an unknown option. It now ignores `--data`, like the
+  other scripts do.
+
 ## 0.2.0 (2026-10-08)
 - Ratings from 0 to 10 per project: code sets each item's range from its urgency and the file check,
   a tool-less Claude call places it inside and says what to do.

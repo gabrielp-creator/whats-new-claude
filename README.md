@@ -4,7 +4,7 @@ A Claude Code plugin that tells you which of Anthropic's new releases matter to 
 rates each one from 0 to 10 for each project, shows the top picks for the project you are working in,
 and turns them into ready-to-use briefs.
 
-Version 0.2.0. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
+Version 0.2.1. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
 
 ## What you see
 
