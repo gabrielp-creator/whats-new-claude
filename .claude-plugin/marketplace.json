@@ -1,0 +1,8 @@
+{
+  "name": "whats-new-claude",
+  "owner": { "name": "Gabriel Philipson" },
+  "description": "The whats-new-claude plugin: which new Anthropic releases matter to your own projects.",
+  "plugins": [
+    { "name": "whats-new-claude", "source": "./" }
+  ]
+}

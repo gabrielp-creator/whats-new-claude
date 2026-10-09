@@ -1,0 +1,59 @@
+{
+  "name": "whats-new-claude",
+  "displayName": "What's New for Claude",
+  "version": "0.2.0",
+  "description": "Tells you which new Anthropic releases matter to your own projects, rated 0 to 10 per project, with top picks for the project you are in and one-step briefs.",
+  "author": { "name": "Gabriel Philipson" },
+  "homepage": "https://github.com/gabrielp-creator/whats-new-claude#readme",
+  "repository": "https://github.com/gabrielp-creator/whats-new-claude",
+  "documentationUrl": "https://github.com/gabrielp-creator/whats-new-claude#readme",
+  "supportUrl": "https://github.com/gabrielp-creator/whats-new-claude/issues",
+  "privacyPolicyUrl": "https://github.com/gabrielp-creator/whats-new-claude/blob/main/PRIVACY.md",
+  "license": "MIT",
+  "keywords": ["changelog", "release-notes", "claude-code", "briefs"],
+  "userConfig": {
+    "update_frequency": {
+      "type": "string",
+      "title": "Background update frequency",
+      "description": "How often to check Anthropic's sources in the background when a session starts. 'manual' never checks on its own. /whats-new always updates now, whatever this is.",
+      "options": ["daily", "every 3 days", "weekly", "manual"],
+      "default": "daily"
+    },
+    "min_rating": {
+      "type": "number",
+      "title": "Top picks threshold",
+      "description": "Items rated at least this (0 to 10) are your top picks, shown by /whats-new here, the reminder and the page.",
+      "min": 0,
+      "max": 10,
+      "default": 8
+    },
+    "auto_rate_max_calls": {
+      "type": "number",
+      "title": "Background rating budget (Claude calls per update)",
+      "description": "Claude calls a background update may make on your account to review and rate new items. 0 = never spend in the background; new items wait for /whats-new. Suggested: daily 10, every 3 days 20, weekly 40.",
+      "min": 0,
+      "max": 200,
+      "default": 0
+    },
+    "max_calls_without_asking": {
+      "type": "number",
+      "title": "Ask before more than this many Claude calls",
+      "description": "When you run /whats-new, it asks first if reviewing and rating would take more Claude calls than this.",
+      "min": 0,
+      "max": 1000,
+      "default": 30
+    },
+    "reminder": {
+      "type": "boolean",
+      "title": "Session-start reminder",
+      "description": "Show a one-line count of top picks when a session starts (numbers and a link only).",
+      "default": true
+    },
+    "github_token": {
+      "type": "string",
+      "title": "GitHub token (optional)",
+      "description": "A read-only GitHub token raises GitHub's rate limit for background updates. Kept in Claude Code's secure storage, sent only to api.github.com.",
+      "sensitive": true
+    }
+  }
+}
