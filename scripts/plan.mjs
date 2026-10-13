@@ -8,7 +8,6 @@ import { dataDir, readJsonl } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { lensItems, loadRows } from "./lib/rows.mjs";
 import { planCalls } from "./lib/plan.mjs";
-import { needsOrchestrator } from "./lib/rate.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -17,6 +16,5 @@ const perLens = ["impact", "type", "risk"].map((l) => {
   const done = new Set(readJsonl(join(DATA, `lens-${l}.jsonl`)).map((r) => r.id));
   return items.filter((i) => !done.has(i.id)).length;
 });
-const rated = new Set(readJsonl(join(DATA, "rate.jsonl")).map((r) => r.id));
-const unratedKnown = loadRows(DATA).rows.filter((r) => needsOrchestrator(r) && r.projects.length && !rated.has(r.id)).length; // rate-run.mjs's own filter
+const unratedKnown = loadRows(DATA).rows.filter((r) => r.toRate).length; // rate-run.mjs's own filter: unrated or stale
 console.log(JSON.stringify({ ...planCalls({ perLens, unratedKnown, limit: config.maxCallsWithoutAsking }), model: config.model }, null, 2));

@@ -273,3 +273,28 @@ test("rateRow carries the note and the new caps through to each project's rating
   assert.equal(p.evidence, "upgrade");
   assert.match(p.note, /claude-opus-4-8/);
 });
+
+// Stale ratings: an answer given under a range or file-check result that no longer holds is rated again.
+import { seenFor, staleRating } from "../scripts/lib/rate.mjs";
+
+test("seenFor records each project's range and evidence as the orchestrator saw them", () => {
+  const r = { ...launch, projects: ["app"] };
+  assert.deepEqual(seenFor(r, missOpus, inv(["claude-opus-4-8"])), { app: [7, 10, "upgrade"] });
+});
+
+test("staleRating: same range and evidence = fresh; a changed range or evidence = stale", () => {
+  const r = { ...launch, projects: ["app"] };
+  const stored = { id: "x:1", ratings: [{ project: "app", score: 8 }], seen: seenFor(r, missOpus, inv(["claude-opus-4-8"])) };
+  assert.equal(staleRating(r, stored, missOpus, inv(["claude-opus-4-8"])), false);
+  assert.equal(staleRating(r, stored, foundOpus, inv(["claude-opus-5-5"])), true, "the project moved to the new model");
+  assert.equal(staleRating({ ...r, projects: ["app", "site"] }, stored, missOpus, inv(["claude-opus-4-8"])), true, "a project with no answer yet");
+});
+
+test("staleRating for answers stored before 0.3.0 (no seen): stale only where the model check changes the range or evidence", () => {
+  const r = { ...launch, projects: ["app"] };
+  const legacy = { id: "x:1", ratings: [{ project: "app", score: 9 }] };
+  assert.equal(staleRating(r, legacy, foundOpus, inv(["claude-opus-5-5"])), true, "adopted: 7 to 10 became 5");
+  assert.equal(staleRating(r, legacy, missOpus, inv([])), false, "no model ids: same not-found range as before");
+  const retire = { ...row({ type: "breaking-or-deprecation", risk: "deprecation", text: "`claude-sonnet-4-5` retires" }), projects: ["app"] };
+  assert.equal(staleRating(retire, legacy, [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"])), false, "retirements are unchanged");
+});

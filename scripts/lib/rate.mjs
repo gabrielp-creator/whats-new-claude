@@ -129,3 +129,16 @@ export function ratePayload(row, evs, models) {
     }),
   };
 }
+
+// What the orchestrator saw per project: [lo, hi, evidence]. rate-run.mjs stores it with each answer.
+export const seenFor = (row, evs, models) =>
+  Object.fromEntries(row.projects.map((p) => { const b = bounds(row, p, evs, models); return [p, [b.lo, b.hi, b.evidence]]; }));
+
+// An answer is stale when a project's range or evidence differs from what it was rated under, or a
+// project has no answer. Answers from before 0.3.0 have no "seen": they were rated without the model
+// check, so that is what they are compared with.
+export function staleRating(row, stored, evs, models) {
+  const answered = new Set((stored?.ratings || []).map((a) => a.project));
+  const now = seenFor(row, evs, models), then = stored?.seen || seenFor(row, evs, undefined);
+  return row.projects.some((p) => !answered.has(p) || !then[p] || then[p].join("|") !== now[p].join("|"));
+}

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { readJsonl, readJson } from "./store.mjs";
 import { merge } from "./merge.mjs";
 import { applyEvidence } from "./probe.mjs";
-import { rateRow } from "./rate.mjs";
+import { rateRow, staleRating, needsOrchestrator } from "./rate.mjs";
 
 const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
 const COMMIT_SOURCES = new Set(["skills", "cookbooks"]);
@@ -35,7 +35,10 @@ export function loadRows(dir, { evidence = true } = {}) {
     };
     const evs = ev.get(i.id) || [];
     const withEvidence = { ...applyEvidence(row, evs), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
-    return { ...withEvidence, ...rateRow(withEvidence, evs, rated.get(i.id) || null, models) };
+    const stored = rated.get(i.id) || null;
+    // toRate: rate-run.mjs should (re)rate it: never rated, or rated under a range that has since changed.
+    const toRate = needsOrchestrator(withEvidence) && withEvidence.projects.length > 0 && (!stored || staleRating(withEvidence, stored, evs, models));
+    return { ...withEvidence, ...rateRow(withEvidence, evs, stored, models), toRate };
   });
   return { items, rows, missing: items.length - covered.length };
 }

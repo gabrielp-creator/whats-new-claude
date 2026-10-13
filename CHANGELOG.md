@@ -11,6 +11,9 @@
   project that is still too large "file check incomplete".
 - Fix: with a Project filter, All items showed the best score across projects; it now shows that
   project's own score (and sorts by it). Without a filter, the score names the project it belongs to.
+- Ratings are redone when they go stale: each answer records the range and file-check result it was
+  given under, and an item is rated again when those change (for answers from 0.2.x, when the new
+  model check changes them). `plan` counts these in its cost estimate.
 - Before setup, the session-start line says to run `/whats-new setup`. Until the review page is
   published, the reminder says `/whats-new page` publishes it (free).
 

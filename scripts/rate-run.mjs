@@ -12,18 +12,18 @@ import { loadConfig, projectsProfile } from "./lib/config.mjs";
 import { runClaude, callsUsed, callLimit } from "./lib/claude.mjs";
 import { loadRows } from "./lib/rows.mjs";
 import { runBatches, jsonArray, safeJson } from "./lib/batch.mjs";
-import { needsOrchestrator, checkRateAnswer, ratePayload, RATE_BATCH } from "./lib/rate.mjs";
+import { checkRateAnswer, ratePayload, seenFor, RATE_BATCH } from "./lib/rate.mjs";
 
 const CONC = 4;
 const DATA = dataDir();
 const config = loadConfig(DATA);
 const out = join(DATA, "rate.jsonl");
-const done = new Set(readJsonl(out).map((r) => r.id));
 const evs = new Map();
 for (const e of readJsonl(join(DATA, "evidence.jsonl"))) { if (!evs.has(e.id)) evs.set(e.id, []); evs.get(e.id).push(e); }
 const models = readJson(join(DATA, "models.json"), undefined);
 
-const todo = loadRows(DATA).rows.filter((r) => needsOrchestrator(r) && r.projects.length && !done.has(r.id));
+// Never rated, or rated under a range or file check that has since changed (lib/rows.mjs toRate).
+const todo = loadRows(DATA).rows.filter((r) => r.toRate);
 const promptFile = join(DATA, ".lens-rate.md");
 writeFileSync(promptFile, readFileSync(join(PLUGIN_ROOT, "lenses", "_shared.md"), "utf8") + "\n" + readFileSync(join(PLUGIN_ROOT, "lenses", "rate.md"), "utf8"));
 
@@ -32,7 +32,7 @@ async function judge(batch) {
   const raw = await runClaude(`<projects>\n${projectsProfile(config)}\n</projects>\n<items>\n${safeJson(payload)}\n</items>`,
     { model: config.model, promptFile, usageLog: join(DATA, "usage.jsonl"), label: "rate" });
   const byId = new Map(jsonArray(raw).map((a) => [a?.id, a]));
-  return batch.map((r) => ({ ...checkRateAnswer(byId.get(r.id), r), model: config.model }));
+  return batch.map((r) => ({ ...checkRateAnswer(byId.get(r.id), r), model: config.model, seen: seenFor(r, evs.get(r.id) || [], models) }));
 }
 
 console.log(`rate: ${todo.length} items in ${Math.ceil(todo.length / RATE_BATCH)} batches`);
