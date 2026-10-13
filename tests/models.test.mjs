@@ -57,3 +57,9 @@ test("scopeOverlap: which of the item's models the project uses (same family and
   assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-20260301"]), ["claude-sonnet-5"], "dated ids are read by family and version");
   assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-5"]), ["claude-sonnet-5-5"]);
 });
+
+test("launchStatus: a model listed as in use is never repeated as an older one", () => {
+  const refs = modelRefs("Claude Opus 5.5 replaces Claude Opus 5 as the default");
+  assert.deepEqual(launchStatus(refs, ["claude-opus-5", "claude-opus-5-5", "claude-opus-4-8"]),
+    { status: "adopted", uses: ["claude-opus-5", "claude-opus-5-5"], older: ["claude-opus-4-8"] });
+});
