@@ -23,7 +23,7 @@ try {
     let project = null;
     try { project = config && projectForCwd(config, process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd()); } catch {}
     const out = hookOutput(reminderText({ summary: readJson(join(dir, "summary.json"), null), config, project,
-      updater: readJson(join(dir, "updater.json"), null) }));
+      updater: readJson(join(dir, "updater.json"), null), options }));
     if (out) process.stdout.write(out + "\n");
   }
 } catch {}

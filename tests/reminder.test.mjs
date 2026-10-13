@@ -40,9 +40,8 @@ test("a stale check is mentioned even when nothing else is", () => {
   assert.match(t, /Last checked 10 days ago/);
 });
 
-test("set up but never run asks for a first run; not set up, or turned off, says nothing", () => {
+test("set up but never run asks for a first run; turned off says nothing", () => {
   assert.match(reminderText({ summary: null, config: cfg }, NOW), /has not run yet/);
-  assert.equal(reminderText({ summary: null, config: null }, NOW), "");
   assert.equal(say({ config: { ...cfg, reminder: false } }), "");
 });
 
@@ -85,4 +84,19 @@ test("a background update that started but never finished is reported once it is
   const quiet = { summary: sum({ top: {}, topTotal: 0 }), config: cfg };
   assert.equal(reminderText({ ...quiet, updater: running(1) }, NOW), "", "still running: say nothing");
   assert.match(reminderText({ ...quiet, updater: running(5) }, NOW), /did not finish/);
+});
+
+test("B-1: before setup, one line says how to start; turning the reminder off in /config silences it", () => {
+  const t = reminderText({ summary: null, config: null }, NOW);
+  assert.match(t, /\/whats-new setup/);
+  assert.ok(t.length < 200);
+  assert.equal(reminderText({ summary: null, config: null, options: { reminder: false } }, NOW), "");
+});
+
+test("B-27: with something to say and no published page yet, it points to the free page command", () => {
+  const t = reminderText({ summary: sum(), config: { minRating: 8 }, project: "app" }, NOW);
+  assert.match(t, /\/whats-new page/);
+  assert.match(t, /free/);
+  assert.doesNotMatch(say({ project: "app" }), /\/whats-new page/, "once published, the link replaces the hint");
+  assert.equal(reminderText({ summary: sum({ top: {}, topTotal: 0 }), config: { minRating: 8 } }, NOW), "", "nothing to say: still quiet");
 });

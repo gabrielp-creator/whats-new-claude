@@ -119,3 +119,11 @@ test("session output: invisible characters stripped, dashes cannot fake the data
   assert.equal((out.match(/^--- end of release data/gm) || []).length, 1, "only the real marker starts a line");
   assert.ok(!/---/.test(out.split("\n").find((l) => l.includes("SYSTEM"))), "the title's dashes are broken up");
 });
+
+test("formatList and hereList carry the code-made model note (B-29, B-33)", () => {
+  const rows = [{ id: "m", source: "claude-code", provenance: "anthropic", date: "2026-10-07", title: "v2.1.280", text: "Added Claude Opus 5.5", url: "", type: "model",
+    injection: false, rating: 9, ratingProject: "app", ratings: [{ project: "app", score: 9, do: "model-refresh", why: "", evidence: "upgrade", foundIn: [], note: "upgrade from claude-opus-4-8", provisional: false }] }];
+  const list = hereList(rows, { project: "app", min: 8, days: 30, now: Date.parse("2026-10-08") });
+  assert.equal(list[0].note, "upgrade from claude-opus-4-8");
+  assert.match(formatList(list, { heading: "app", lastChecked: "x" }), /upgrade from claude-opus-4-8/);
+});

@@ -9,9 +9,11 @@ const ID = /^[a-z0-9][a-z0-9-]{0,40}$/;
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
 // summary: <data>/summary.json from build-page; updater: <data>/updater.json from update.mjs;
-// project: the configured project the session is in, if any.
-export function reminderText({ summary, config, project, updater }, now = Date.now()) {
-  if (!config || config.reminder === false) return "";
+// project: the configured project the session is in, if any. options: the /config settings, which
+// are all there is before setup.
+export function reminderText({ summary, config, project, updater, options }, now = Date.now()) {
+  if (!config) return options?.reminder === false ? "" : "What's New for Claude is installed. Run /whats-new setup to pick your projects."; // B-1
+  if (config.reminder === false) return "";
   if (!summary) return "What's New for Claude is set up but has not run yet. Run /whats-new to check Anthropic's latest releases against your projects.";
   const min = Number(summary.min ?? config.minRating ?? 8); // the threshold the counts were made with
   const top = summary.top || {};
@@ -35,7 +37,9 @@ export function reminderText({ summary, config, project, updater }, now = Date.n
   if (ageDays >= STALE_DAYS) parts.push(`Last checked ${ageDays} days ago; run /whats-new to refresh.`);
   if (!parts.length) return "";
   if (mine) parts.push("/whats-new here lists them.");
-  const link = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(config.pageUrl || "") ? ` Review: ${config.pageUrl}` : "";
+  // B-27: until the review page is published, say how to get it.
+  const link = /^https:\/\/claude\.ai\/(code\/)?artifact\/[A-Za-z0-9-]+$/.test(config.pageUrl || "") ? ` Review: ${config.pageUrl}`
+    : " /whats-new page publishes the full review page (free).";
   return `What's New for Claude: ${parts.join(" ")}${link}`;
 }
 

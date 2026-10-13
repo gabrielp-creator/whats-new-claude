@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.0 (2026-10-13)
+- Ratings follow the Claude models each project uses. The file check now lists the model ids in each
+  project's files. A new model the project already uses drops to 5 ("already adopted: confirm settings
+  and pricing"); a project on an older model of the same family is an upgrade candidate; a change about
+  models the project does not use stays below 8 and says "applies when you move to ...". Before, a
+  launch rated highest for the projects that had already moved to it.
+- Fix: in large projects the file check spent its file limit on output and data folders before reaching
+  the source, so it found nothing and could not cap false alarms. It now reads source first and labels a
+  project that is still too large "file check incomplete".
+- Fix: with a Project filter, All items showed the best score across projects; it now shows that
+  project's own score (and sorts by it). Without a filter, the score names the project it belongs to.
+- Before setup, the session-start line says to run `/whats-new setup`. Until the review page is
+  published, the reminder says `/whats-new page` publishes it (free).
+
 ## 0.2.1 (2026-10-09)
 - Fix: every `/whats-new` command stopped at its first step. The skill passes `--data` to each
   script, and the argument reader rejected it as an unknown option. It now ignores `--data`, like the

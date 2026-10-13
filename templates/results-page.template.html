@@ -262,6 +262,23 @@ function renderSummary(base) {
   }
 }
 
+// The score All items shows: with a Project filter, that project's own rating; without one, the best
+// across projects, named (B-30). Sorting by rating uses the same number.
+function shown(i) {
+  const p = $("f-project").value;
+  const r = p ? i.ratings.find((x) => x.project === p) : i.ratings.find((x) => x.project === i.ratingProject);
+  return p && r ? { score: r.score, project: p, filtered: true, r } : { score: i.rating, project: i.ratingProject, filtered: false, r };
+}
+// What the file check says about one project's rating. The note is code-made (model ids only).
+const EVIDENCE = { adopted: "already adopted", upgrade: "upgrade candidate", "other-models": "uses other models", incomplete: "file check incomplete" };
+function evidenceTags(v, r) {
+  if (!r) return;
+  if (r.evidence === "confirmed" && r.foundIn.length) v.append(el("span", "tag ok", `found: ${r.foundIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`));
+  else if (r.evidence === "not-found") v.append(el("span", "tag", "names not seen in this project's files"));
+  else if (EVIDENCE[r.evidence]) v.append(el("span", r.evidence === "upgrade" ? "tag ok" : "tag", EVIDENCE[r.evidence]));
+  if (r.note) v.append(el("span", "tag", r.note));
+}
+
 function row(i) {
   const r = el("article", "row"); r.dataset.tier = i.urgencyLabel; r.setAttribute("data-comment-target", "");
   if (picks.has(i.id)) r.classList.add("picked");
@@ -269,7 +286,9 @@ function row(i) {
   box.addEventListener("change", () => setPick([i.id], box.checked));
   const body = el("div", "body");
   const head = el("div", "head");
-  head.append(el("span", "score", i.rating.toFixed(1)), el("span", "pill", i.urgencyLabel === "none" ? "no action" : i.urgencyLabel), el("span", null, `${SECTIONS[i.section]} · ${i.source} · ${i.date}`));
+  const s = shown(i), sc = el("span", "score", s.score.toFixed(1));
+  if (!s.filtered && s.project && i.ratings.length > 1) { sc.append(el("small", null, `best: ${s.project}`)); sc.title = "The highest rating across projects. Filter by project to see each project's own."; }
+  head.append(sc, el("span", "pill", i.urgencyLabel === "none" ? "no action" : i.urgencyLabel), el("span", null, `${SECTIONS[i.section]} · ${i.source} · ${i.date}`));
   if (i.fyiOnly) head.append(el("span", "tag", "third-party: FYI only"));
   const ident = el("span", "ident", i.id); head.append(ident);
   body.append(head);
@@ -285,6 +304,7 @@ function row(i) {
   for (const k of i.tripwires) v.append(el("span", "tag kw", k));
   if (i.evidence === "confirmed") v.append(el("span", "tag ok", `confirmed: ${i.foundIn.slice(0, 2).map((f) => `${f.term} in ${f.project}/${f.file}`).join("; ")}${i.foundIn.length > 2 ? ` +${i.foundIn.length - 2}` : ""}`));
   else if (i.evidence === "not-found") v.append(el("span", "tag", "names not seen in your files"));
+  if (s.filtered) evidenceTags(v, s.r);
   body.append(v);
   if (i.why) body.append(el("p", "why", i.why));
   if (i.riskWhy) body.append(el("p", "why", `Risk: ${i.riskWhy}`));
@@ -314,7 +334,7 @@ function renderList() {
   renderSummary(base);
   hits = base.filter((i) => state.tiers.has(i.urgencyLabel));
   const sort = $("f-sort").value;
-  hits.sort((a, b) => (sort === "new" ? 0 : sort === "rated" ? b.rating - a.rating : b.urgency - a.urgency) || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || b.urgency - a.urgency);
+  hits.sort((a, b) => (sort === "new" ? 0 : sort === "rated" ? shown(b).score - shown(a).score : b.urgency - a.urgency) || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || b.urgency - a.urgency);
   const list = $("list"); list.replaceChildren();
   const bar = el("div", "bar"); bar.append(el("span", null, `${hits.length} of ${items.length} items`));
   const tools = el("div", "tools");
@@ -499,8 +519,7 @@ function topCard({ i, r }, project) {
     body.append(n);
   }
   const v = el("div", "verdict");
-  if (r.evidence === "confirmed" && r.foundIn.length) v.append(el("span", "tag ok", `found: ${r.foundIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`));
-  else if (r.evidence === "not-found") v.append(el("span", "tag", "names not seen in this project's files"));
+  evidenceTags(v, r);
   if (i.risk !== "none") v.append(el("span", "tag risk", `${i.risk}${i.riskExposed ? " · exposed" : ""}`));
   v.append(el("span", "tag", i.type));
   body.append(v);

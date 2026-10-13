@@ -11,7 +11,8 @@ Version 0.2.1. Works in Claude Code only (it runs local scripts). An independent
 - **At session start**, one line: how many top picks there are for the project you opened, and for
   the rest. It also says when a source failed or new items are waiting. Numbers and a link only.
 - **`/whats-new here`**: the top picks for this project, best first, each with its rating, the next
-  step and why, and whether its names were found in your files. Free: it reads stored results.
+  step and why, and whether its names were found in your files. For model news it says whether the
+  project already uses that model or could upgrade from an older one. Free: it reads stored results.
 - **`/whats-new news`**: recent Anthropic models, new features, deprecations and security changes,
   whatever your projects use.
 - **`/whats-new export`**: writes a brief per project for everything rated at or above your threshold
@@ -115,8 +116,8 @@ change.
 
 ## Troubleshooting
 
-- **No reminder at session start.** Run `/whats-new setup` first; the reminder also stays quiet when
-  there is nothing at your threshold. Check that it is on in `/config`.
+- **No reminder at session start.** Before setup it only says to run `/whats-new setup`; after that it
+  stays quiet when there is nothing at your threshold. Check that it is on in `/config`.
 - **"This folder is not one of your configured projects."** `here` matches your working folder to the
   project folders from setup. Use `--project <id>`, or rerun `/whats-new setup` to add the folder.
 - **A source FAILED.** It is retried on the next run and named in the reminder until it works. GitHub

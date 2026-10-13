@@ -11,7 +11,13 @@ How to score:
 - below 5: marginal for that project.
 Each project has a "range". Score inside it; a score outside it is moved to the nearest end.
 Evidence "not-found" means concrete names from the item were searched for in that project and are not
-there: it probably does not use the thing. "unchecked" means unknown, not absent.
+there: it probably does not use the thing. "unchecked" means unknown, not absent. "incomplete" means
+the project was larger than the search limit: also unknown.
+For Claude models, code compares the item with the model ids in each project's files, and "note" says
+what it found. "adopted": a launched model the project already uses; a low score, at most "read" or
+"model-refresh" to confirm settings and pricing. "upgrade": the project uses an older model of the
+launched family; judge the upgrade on its merits. "other-models": the item concerns models this project
+does not use; it matters only when the project moves to one of them.
 Judge from the item text and the lens answers only. Do not assume facts about a project beyond its
 description in <projects>.
 

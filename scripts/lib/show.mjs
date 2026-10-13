@@ -45,7 +45,7 @@ const within = (row, days, now) => Boolean(row.date) && row.date >= sinceDate(da
 const entry = (row, rating) => ({
   id: row.id, title: headline(row), url: row.url, date: row.date, injection: Boolean(row.injection),
   score: rating?.score ?? row.rating, do: rating?.do ?? null, why: rating?.why ?? "",
-  evidence: rating?.evidence ?? "unchecked", foundIn: rating?.foundIn ?? [], provisional: Boolean(rating?.provisional),
+  evidence: rating?.evidence ?? "unchecked", foundIn: rating?.foundIn ?? [], note: rating?.note ?? "", provisional: Boolean(rating?.provisional),
 });
 
 export function hereList(rows, { project, min, days, now = Date.now(), limit = 10 }) {
@@ -95,7 +95,7 @@ export function formatList(entries, { heading, lastChecked: checked, nonce = Mat
     const score = typeof e.score === "number" ? e.score.toFixed(1) : "-";
     lines.push(`${score}${e.provisional ? "*" : ""}  ${title}  [${e.date}]`);
     const detail = [e.do && `do: ${e.do}`, e.why && !e.injection && clean(e.why, 160),
-      e.evidence === "confirmed" && e.foundIn.length && `found in ${clean(e.foundIn[0].file, 80)}`].filter(Boolean);
+      e.evidence === "confirmed" && e.foundIn.length && `found in ${clean(e.foundIn[0].file, 80)}`, e.note && clean(e.note, 160)].filter(Boolean);
     if (detail.length) lines.push(`     ${detail.join(" | ")}`);
     if (link(e.url)) lines.push(`     ${link(e.url)}`);
   }
