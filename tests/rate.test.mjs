@@ -157,7 +157,7 @@ test("ratePayload gives the orchestrator each project's range and evidence names
   const r = row({ title: "T", text: "body", source: "claude-code", provenance: "anthropic-release", effect: "fixes", why: "w",
     type: "model", action: "model-refresh", risk: "deprecation", riskExposed: true, riskWhy: "rw" });
   const p = ratePayload(r, [ev({ checked: ["claude-opus-4-1"], found: [{ term: "claude-opus-4-1", file: "src/a.ts", text: "SECRET CONTENT" }] })]);
-  assert.deepEqual(p.projects, [{ id: "app", range: [7, 10], evidence: "confirmed", found: ["claude-opus-4-1 in src/a.ts"] }]);
+  assert.deepEqual(p.projects, [{ id: "app", range: [7, 10], evidence: "confirmed", note: "", found: ["claude-opus-4-1 in src/a.ts"] }]);
   assert.equal(p.lenses.type, "model");
   assert.doesNotMatch(JSON.stringify(p), /SECRET CONTENT/);
 });
@@ -173,4 +173,103 @@ test("the injection flag fails closed: true in any spelling counts", () => {
   const base = { id: "x:1", ratings: [{ project: "app", score: 8, do: "read", why: "w" }] };
   for (const v of [true, "true", "TRUE"]) assert.equal(checkRateAnswer({ ...base, injection: v }, item).injection, true, String(v));
   for (const v of [false, undefined, "false"]) assert.equal(checkRateAnswer({ ...base, injection: v }, item).injection, false, String(v));
+});
+
+// B-29 and B-33: polarity by item kind, using each project's model inventory (verify.mjs models.json).
+import { ADOPTED_CAP } from "../scripts/lib/rate.mjs";
+const inv = (models, partial = false) => ({ app: { models, partial } });
+const launch = row({ type: "model", risk: "behavior-change", title: "v2.1.280", text: "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default Opus model" });
+const foundOpus = [ev({ checked: ["claude-opus-5-5"], found: [{ term: "claude-opus-5-5", file: "settings.json" }] })];
+const missOpus = [ev({ checked: ["claude-opus-5-5"], found: [] })];
+
+test("launch already adopted: capped near 5, older ids in use named", () => {
+  assert.equal(ADOPTED_CAP, 5);
+  const b = bounds(launch, "app", foundOpus, inv(["claude-opus-5-5"]));
+  assert.equal(b.evidence, "adopted");
+  assert.equal(b.hi, 5);
+  assert.ok(b.lo <= b.hi);
+  assert.match(b.note, /already uses claude-opus-5-5/);
+  const mixed = bounds(launch, "app", foundOpus, inv(["claude-opus-4-8", "claude-opus-5", "claude-opus-5-5"]));
+  assert.equal(mixed.evidence, "adopted", "mixed ids count as adopted (Gabriel, 2026-10-09)");
+  assert.equal(mixed.hi, 5);
+  assert.match(mixed.note, /claude-opus-4-8/);
+  assert.match(mixed.note, /claude-opus-5\b/);
+});
+
+test("launch with an older model of the same family: upgrade candidate, band open even though the new id is not found", () => {
+  const b = bounds(launch, "app", missOpus, inv(["claude-opus-4-8", "claude-haiku-4-5", "claude-sonnet-4-6"]));
+  assert.equal(b.evidence, "upgrade");
+  assert.equal(b.hi, 10);
+  assert.match(b.note, /upgrade from claude-opus-4-8/);
+});
+
+test("launch for a project on another family only: capped at 7.9 (same family only, Gabriel 2026-10-09)", () => {
+  const b = bounds(launch, "app", missOpus, inv(["claude-sonnet-4-6"]));
+  assert.equal(b.evidence, "other-models");
+  assert.equal(b.hi, 7.9);
+  assert.match(b.note, /claude-sonnet-4-6/);
+});
+
+test("launch for a project with no model ids: today's not-found cap", () => {
+  const b = bounds(launch, "app", missOpus, inv([]));
+  assert.equal(b.evidence, "not-found");
+  assert.equal(b.hi, 7.9);
+});
+
+test("partly searched project: a found model still counts, an absent one is 'file check incomplete', never capped", () => {
+  assert.equal(bounds(launch, "app", foundOpus, inv(["claude-opus-5-5"], true)).evidence, "adopted");
+  const b = bounds(launch, "app", [ev({ checked: [], found: [] })], inv(["claude-sonnet-4-6"], true));
+  assert.equal(b.evidence, "incomplete");
+  assert.equal(b.hi, 10);
+  assert.match(b.note, /incomplete/);
+});
+
+test("retirements keep today's behaviour: found = confirmed (open), not found = 7.9", () => {
+  const retire = row({ type: "breaking-or-deprecation", risk: "deprecation", text: "Claude Sonnet 4.5 (`claude-sonnet-4-5`) retires on 2026-11-01" });
+  const hit = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [{ term: "claude-sonnet-4-5", file: "a.ts" }] })], inv(["claude-sonnet-4-5"]));
+  assert.equal(hit.evidence, "confirmed");
+  assert.equal(hit.hi, 10);
+  const miss = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"]));
+  assert.equal(miss.evidence, "not-found");
+  assert.equal(miss.hi, 7.9);
+  // a model item whose risk is a deprecation is a retirement, not a launch
+  const modelRetire = row({ ...retire, type: "model" });
+  assert.equal(bounds(modelRetire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [{ term: "claude-sonnet-4-5", file: "a.ts" }] })], inv(["claude-sonnet-4-5"])).evidence, "confirmed");
+});
+
+const sonnetBreak = row({ type: "breaking-or-deprecation", risk: "breaking",
+  text: "Code written for Claude Sonnet 5 can break on Claude Sonnet 5.5 in five ways. The advisor tool rejects Claude Opus 4.8, Claude Opus 4.7, and Claude Sonnet 5 as advisors." });
+
+test("B-33: a change scoped to models the project does not use is capped at 7.9 and says when it applies", () => {
+  const b = bounds(sonnetBreak, "app", [], inv(["claude-sonnet-4-6"]));
+  assert.equal(b.evidence, "other-models");
+  assert.equal(b.hi, 7.9);
+  assert.match(b.note, /claude-sonnet-5-5/);
+});
+
+test("B-33: the band stays open when the project uses one of the named models, or its models are unknown", () => {
+  assert.equal(bounds(sonnetBreak, "app", [], inv(["claude-opus-4-8", "claude-opus-5-5"])).hi, 10);
+  assert.equal(bounds(sonnetBreak, "app", [], inv([])).hi, 10, "no model ids: cannot tell which model it runs");
+  assert.equal(bounds(sonnetBreak, "app", [], inv(["claude-sonnet-4-6"], true)).hi, 10, "partly searched");
+  assert.equal(bounds(sonnetBreak, "app", [], undefined).hi, 10, "no inventory at all (verify not run yet)");
+  const confirmedOther = [ev({ checked: ["computer_20251124"], found: [{ term: "computer_20251124", file: "a.ts" }] })];
+  assert.equal(bounds(sonnetBreak, "app", confirmedOther, inv(["claude-sonnet-4-6"])).evidence, "confirmed", "a confirmed name keeps the band open");
+});
+
+test("rateRow carries the note and the new caps through to each project's rating", () => {
+  const r = { ...launch, projects: ["setup", "new-compass"] };
+  const models = { setup: { models: ["claude-opus-5-5"], partial: false }, "new-compass": { models: ["claude-opus-4-8"], partial: false } };
+  const evs = [{ project: "setup", ...foundOpus[0], project: "setup" }, { ...missOpus[0], project: "new-compass" }];
+  const orch = { id: "x:1", ratings: [{ project: "setup", score: 9, do: "read", why: "w" }, { project: "new-compass", score: 9, do: "model-refresh", why: "w" }] };
+  const out = rateRow(r, evs, orch, models);
+  const s = out.ratings.find((x) => x.project === "setup"), n = out.ratings.find((x) => x.project === "new-compass");
+  assert.equal(s.score, 5);
+  assert.equal(s.evidence, "adopted");
+  assert.match(s.note, /already uses/);
+  assert.equal(n.score, 9);
+  assert.equal(n.evidence, "upgrade");
+  assert.equal(out.ratingProject, "new-compass", "the upgrade candidate now leads, not the project that already moved");
+  const p = ratePayload(r, evs, models).projects.find((x) => x.id === "new-compass");
+  assert.equal(p.evidence, "upgrade");
+  assert.match(p.note, /claude-opus-4-8/);
 });

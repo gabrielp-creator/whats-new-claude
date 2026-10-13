@@ -7,7 +7,7 @@
 // Usage: node rate-run.mjs --max-calls <n> [--data <dir>]
 import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, readJsonl, PLUGIN_ROOT } from "./lib/store.mjs";
+import { dataDir, readJsonl, readJson, PLUGIN_ROOT } from "./lib/store.mjs";
 import { loadConfig, projectsProfile } from "./lib/config.mjs";
 import { runClaude, callsUsed, callLimit } from "./lib/claude.mjs";
 import { loadRows } from "./lib/rows.mjs";
@@ -21,13 +21,14 @@ const out = join(DATA, "rate.jsonl");
 const done = new Set(readJsonl(out).map((r) => r.id));
 const evs = new Map();
 for (const e of readJsonl(join(DATA, "evidence.jsonl"))) { if (!evs.has(e.id)) evs.set(e.id, []); evs.get(e.id).push(e); }
+const models = readJson(join(DATA, "models.json"), undefined);
 
 const todo = loadRows(DATA).rows.filter((r) => needsOrchestrator(r) && r.projects.length && !done.has(r.id));
 const promptFile = join(DATA, ".lens-rate.md");
 writeFileSync(promptFile, readFileSync(join(PLUGIN_ROOT, "lenses", "_shared.md"), "utf8") + "\n" + readFileSync(join(PLUGIN_ROOT, "lenses", "rate.md"), "utf8"));
 
 async function judge(batch) {
-  const payload = batch.map((r) => ratePayload(r, evs.get(r.id) || []));
+  const payload = batch.map((r) => ratePayload(r, evs.get(r.id) || [], models));
   const raw = await runClaude(`<projects>\n${projectsProfile(config)}\n</projects>\n<items>\n${safeJson(payload)}\n</items>`,
     { model: config.model, promptFile, usageLog: join(DATA, "usage.jsonl"), label: "rate" });
   const byId = new Map(jsonArray(raw).map((a) => [a?.id, a]));

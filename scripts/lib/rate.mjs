@@ -3,10 +3,12 @@
 // Fetched text can move an item within its band, never out of it. Tested in tests/rate.test.mjs.
 
 import { injectionFlag } from "./batch.mjs";
+import { modelRefs, launchStatus, scopeOverlap } from "./models.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
 export const NOT_FOUND_CAP = 7.9; // keeps an item that names files we could not find out of the 8+ list
+export const ADOPTED_CAP = 5;     // a launch the project already uses: still listed, never a top pick (Gabriel, 2026-10-09)
 export const ACTIONS = new Set(["model-refresh", "claude-md-rule", "try-feature", "update-harness", "update-code", "read", "ignore"]);
 const STRENGTH_AT = { high: 0.75, medium: 0.5, low: 0.25 };
 const WHY_MAX = 160;
@@ -22,16 +24,46 @@ const round1 = (n) => Math.round(n * 10) / 10;
 // would be written somewhere if the project used it.
 export const termKind = (t) => (/^[-/]/.test(t) ? "typed" : "file");
 
+// A model launch, rather than a retirement or a breaking change: finding the new id means the project
+// has already moved, so the file check reads the other way round (B-29).
+const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
+const list = (ids) => ids.slice(0, 3).join(", ") + (ids.length > 3 ? ` +${ids.length - 3}` : "");
+
 // evs: verify.mjs evidence rows for this item ({project, checked, found}). checked is [] when the
 // project was only partly searched and nothing matched, so a partial search can never cap.
-export function bounds(row, project, evs) {
+// models: verify.mjs models.json ({[project]: {models: [ids], partial}}), or undefined before a run.
+// note: one line of code-made text (model ids only) saying why the band is what it is.
+export function bounds(row, project, evs, models) {
   let [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none;
   const e = project ? evs.find((x) => x.project === project) : null;
-  let evidence = "unchecked", foundIn = [];
+  const inv = project ? models?.[project] : null;
+  const uses = inv?.models || [];
+  const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
+  let evidence = "unchecked", foundIn = [], note = "";
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (e?.checked?.some((t) => termKind(t) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
+  else if (inv?.partial) { evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit"; }
+
+  if (isLaunch(row) && refs.length && uses.length) {
+    const l = launchStatus(refs, uses);
+    [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none; // decided here, not by the generic check above
+    if (l.status === "adopted") {
+      evidence = "adopted"; hi = Math.min(hi, ADOPTED_CAP);
+      note = `already uses ${list(l.uses)}${l.older.length ? ` (also ${list(l.older)})` : ""}: confirm settings and pricing`;
+    } else if (l.status === "upgrade") {
+      evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`;
+    } else if (inv.partial) {
+      evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit";
+    } else {
+      evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP); note = `this project uses ${list(uses)}`;
+    }
+  } else if (!isLaunch(row) && refs.length && uses.length && evidence === "unchecked" && !scopeOverlap(refs, uses).length) {
+    // A change scoped to models the project does not use matters when it moves to one of them (B-33).
+    evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
+    note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
+  }
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, note };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -47,18 +79,18 @@ const oneLine = (s) => String(s || "").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, 
 
 // orch: the orchestrator's answer for this item ({id, ratings: [{project, score, do, why}], injection})
 // or null. Projects it names that the lenses did not tie to the item are ignored.
-export function rateRow(row, evs, orch) {
+export function rateRow(row, evs, orch, models) {
   const injection = Boolean(orch?.injection) || row.flags.some((f) => /instructions aimed at an AI/.test(f));
   const answers = new Map((orch?.ratings || []).map((a) => [a.project, a]));
   const projects = row.projects.length ? row.projects : [null];
   const ratings = projects.map((project) => {
-    const b = bounds(row, project, evs);
+    const b = bounds(row, project, evs, models);
     const a = project ? answers.get(project) : null;
     const score = a ? clampScore(a.score, b) : null;
     let act = a && ACTIONS.has(a.do) ? a.do : "read";
     if (row.fyiOnly && act === "try-feature") act = "read";
     return {
-      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn,
+      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note,
       score: score ?? codeScore(row, b),
       provisional: score === null && project !== null && needsOrchestrator(row),
       do: a ? act : null,
@@ -86,14 +118,14 @@ export function checkRateAnswer(r, row) {
 
 // What the orchestrator sees for one item: its text (untrusted), the lens answers, and per project
 // the allowed range and the names found or not found. Never file contents.
-export function ratePayload(row, evs) {
+export function ratePayload(row, evs, models) {
   return {
     id: row.id, source: row.source, provenance: row.provenance, title: row.title, text: row.text,
     lenses: { effect: row.effect, strength: row.strength, why: row.why, type: row.type, action: row.action,
       risk: row.risk, exposed: row.riskExposed, riskWhy: row.riskWhy },
     projects: row.projects.map((id) => {
-      const b = bounds(row, id, evs);
-      return { id, range: [b.lo, b.hi], evidence: b.evidence, found: b.foundIn.map((f) => `${f.term} in ${f.file}`) };
+      const b = bounds(row, id, evs, models);
+      return { id, range: [b.lo, b.hi], evidence: b.evidence, note: b.note, found: b.foundIn.map((f) => `${f.term} in ${f.file}`) };
     }),
   };
 }

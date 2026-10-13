@@ -1,7 +1,7 @@
 // Joins stored items with commit details, the three lens answers, the file evidence and the rating
 // (lib/rate.mjs: code bounds plus the orchestrator's answer from rate.jsonl) into review rows. Shared by lens-run, plan, verify, build-page and write-briefs so they all see the same data.
 import { join } from "node:path";
-import { readJsonl } from "./store.mjs";
+import { readJsonl, readJson } from "./store.mjs";
 import { merge } from "./merge.mjs";
 import { applyEvidence } from "./probe.mjs";
 import { rateRow } from "./rate.mjs";
@@ -26,6 +26,7 @@ export function loadRows(dir, { evidence = true } = {}) {
   const ev = new Map();
   if (evidence) for (const e of readJsonl(join(dir, "evidence.jsonl"))) { if (!ev.has(e.id)) ev.set(e.id, []); ev.get(e.id).push(e); }
   const rated = byId(readJsonl(join(dir, "rate.jsonl")));
+  const models = evidence ? readJson(join(dir, "models.json"), undefined) : undefined; // verify.mjs: model ids per project
   const covered = items.filter((i) => Object.values(lenses).every((l) => l.has(i.id)));
   const rows = covered.map((i) => {
     const row = {
@@ -34,7 +35,7 @@ export function loadRows(dir, { evidence = true } = {}) {
     };
     const evs = ev.get(i.id) || [];
     const withEvidence = { ...applyEvidence(row, evs), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
-    return { ...withEvidence, ...rateRow(withEvidence, evs, rated.get(i.id) || null) };
+    return { ...withEvidence, ...rateRow(withEvidence, evs, rated.get(i.id) || null, models) };
   });
   return { items, rows, missing: items.length - covered.length };
 }
