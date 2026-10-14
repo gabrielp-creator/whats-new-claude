@@ -59,6 +59,13 @@ for (const p of exp.picks || []) {
   }
 }
 if (!byProject.size) throw new Error("no saved picks with a known project; nothing to write");
+// B-38: a picked item brings the rest of its event, so the brief's one entry has every source's link.
+for (const items of byProject.values()) {
+  for (const it of [...items]) {
+    if (!it.event) continue;
+    for (const r of allRows) if (r.event === it.event && !items.some((x) => x.id === r.id)) items.push({ ...r, action: r.action });
+  }
+}
 
 for (const [proj, items] of byProject) {
   const project = projects.get(proj);
@@ -72,6 +79,8 @@ for (const [proj, items] of byProject) {
     else if (chosen) console.error(`${proj}: page folder ${JSON.stringify(pageDir)} is outside the project; using ${project.briefDir}`);
   }
   const md = buildBrief(proj, items, { date: DATE, dir: relative(config.workspaceRoot, dir).split(sep).join("/"), rootLabel: config.workspaceRoot });
+  // P-21: nothing to confirm, act on or keep for later: no file in the project, one line here.
+  if (!md) { console.log(`${proj}: only items not used here or already in your version; no brief written.`); continue; }
   let file = join(dir, briefFileName(proj, DATE));
   for (let n = 2; existsSync(file); n++) file = join(dir, briefFileName(proj, DATE).replace(/\.md$/, `-${n}.md`));
   // "wx": never overwrite, and never write through a file or link that appeared after the check above.
