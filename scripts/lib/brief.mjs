@@ -109,6 +109,8 @@ export function briefEntries(project, items) {
 // The models this project runs, with where, as code found them: normalized ids only, never a name
 // taken from release text, so they may go into a prompt.
 const MODEL_ID = /^claude-(?:opus|sonnet|haiku|fable|mythos)-\d{1,2}(?:-\d{1,2})?$/;
+// The profile's facts, as lib/profile.mjs words them: a closed set of shapes.
+const PROFILE_FACT = /^(?:`[a-z]+` hook on [A-Za-z]+|[A-Za-z]+ in (?:allow|deny|ask) rules|sandbox enabled|defaultMode [A-Za-z]+|inline `!` shell)$/;
 function modelSites(r) {
   const by = new Map();
   for (const f of r?.foundIn || []) if (MODEL_ID.test(f.term)) { if (!by.has(f.term)) by.set(f.term, []); by.get(f.term).push(f.file); }
@@ -135,6 +137,13 @@ function promptFor(n, e) {
     "1. First look for an existing decision about this model change: the project's backlog, decision logs and local branches (git branch, then search them), with memory only as a hint. If you find one, report it with its source (file, branch, commit, date). Stop there only if it is newer than this change and the change is not a retirement or a breaking change; otherwise continue.",
     `2. Then work through: ${sites ? `where this project calls ${sites}; ` : ""}whether the model it uses is retiring (the model deprecations page); each call's settings (thinking, effort, max tokens, tools); what breaks on the move (the claude-api skill if installed, else the platform docs); prices; the SDK version; caches keyed without the model; and this project's own rules. End with a recommendation and its cost difference.`,
     done];
+  // A hook or settings change the profile found (B-51): name code's facts (hook types and events,
+  // tool kinds of permission rules, never an MCP server's name) and ask what the change does to each.
+  const facts = (r?.foundIn || []).filter((f) => PROFILE_FACT.test(f.term)).map((f) => `${oneLine(f.term)} (${oneLine(f.file)})`);
+  if (facts.length) return [...head, `The plugin found: ${facts.slice(0, 5).join("; ")}.`,
+    "1. For each one, read its definition and say whether the change alters what it does (allow, ask, block, stop).",
+    "2. Say whether anything else depends on the old behaviour (other hooks, rules, CLAUDE.md, a project's gates).",
+    "3. Recommend one of: no action, a re-test, or a change (say which file and why).", done];
   return [...head, `Check whether this project uses what it changes. ${actionStep(actor.action)}`, done];
 }
 

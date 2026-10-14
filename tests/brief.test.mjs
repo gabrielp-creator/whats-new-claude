@@ -263,3 +263,13 @@ test("B-38: an event the project already runs is Confirm handled, headed by the 
   assert.match(md, /^### 1\. Model change, platform release notes, 2026-10-05 \(3 sources\)$/m);
   assert.equal(md.split(url).length - 1, 2, "the shared link once as Source, once in the prompt");
 });
+
+test("B-42: a hook or settings change found by the profile gets a prompt naming code's facts, never release names", () => {
+  const md = buildBrief("app", [entry("c:9", "act", { type: "bug-fix", text: "Fixed `prompt` and `agent` hooks written as instructions" },
+    { evidence: "confirmed", foundIn: [{ term: "`prompt` hook on Stop", file: "settings.local.json" }, { term: "Bash in deny rules", file: "settings.json" }, { term: "effortLevel", file: "settings.json" }] })], opts);
+  const [p] = promptsOf(md);
+  assert.match(p, /The plugin found: `prompt` hook on Stop \(settings\.local\.json\); Bash in deny rules \(settings\.json\)\./);
+  assert.match(p, /say whether the change alters what it does/);
+  assert.match(p, /Recommend one of: no action, a re-test, or a change/);
+  assert.doesNotMatch(p, /effortLevel/);
+});
