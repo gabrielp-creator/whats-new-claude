@@ -662,3 +662,25 @@ test("B-45: a launch nearby counts only when the item names the launched model, 
   assert.deepEqual([b.lo, b.hi], BANDS.urgent);
   assert.doesNotMatch(b.note, /move to|launched with/);
 });
+
+// B-4 (AK 2): an upgrade launch, or a breaking note, on a model the project pins that is retiring
+// carries the date and is urgent.
+const retiringSonnet = { id: "claude-sonnet-4-5", file: "src/llm.ts", line: 12, pageId: "claude-sonnet-4-5-20250929", state: "deprecated", deprecated: "2026-09-30", retires: "2026-11-30", replacement: "claude-sonnet-5-5" };
+const onSonnet45 = (retiring) => ({ app: { models: ["claude-sonnet-4-5"], used: [{ id: "claude-sonnet-4-5", file: "src/llm.ts", line: 12 }], aliases: [], partial: false, retiring } });
+
+test("B-4: an upgrade from a retiring model is urgent and names the date (AK 2)", () => {
+  const sonnet55 = row({ type: "model", risk: "none", urgencyLabel: "soon", text: "We've launched Claude Sonnet 5.5 (claude-sonnet-5-5)." });
+  const b = bounds(sonnet55, "app", [], onSonnet45([retiringSonnet]));
+  assert.equal(b.evidence, "upgrade");
+  assert.deepEqual([b.lo, b.hi], BANDS.urgent);
+  assert.match(b.note, /upgrade from claude-sonnet-4-5; claude-sonnet-4-5 retires on 2026-11-30/);
+  assert.deepEqual([bounds(sonnet55, "app", [], onSonnet45([])).lo], [BANDS.soon[0]], "no retirement: the lenses' band");
+});
+
+test("B-4: a breaking note on a retiring model in use is urgent with the date, even when the launch was met", () => {
+  const brk = row({ type: "breaking-or-deprecation", risk: "breaking", urgencyLabel: "later", text: "Code written for Claude Sonnet 4.5 can break on Claude Sonnet 5.5. Manual thinking returns a 400 error." });
+  const b = bounds(brk, "app", [], onSonnet45([retiringSonnet]));
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.urgent);
+  assert.match(b.note, /claude-sonnet-4-5 retires on 2026-11-30/);
+});

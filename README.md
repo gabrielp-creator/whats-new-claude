@@ -43,7 +43,8 @@ Options: `here --min 8.5 --days 14 --project <id>`, `news --days 3`,
 
 1. **Fetches** new items from eight Anthropic sources: Claude Code releases, both Agent SDKs, the API
    release notes, anthropic.com (news, engineering, research), the skills and cookbooks repos, and new
-   plugins in the official marketplace.
+   plugins in the official marketplace. It also reads the model deprecations page, so a model id your
+   code pins that is deprecated or retired is flagged with its date, with no Claude call.
 2. **Reviews** each item with three Claude calls that have **no tools**: impact on each of your
    projects, kind of change, and risk. Tested code merges them into an urgency level.
 3. **Checks your files**: looks up the concrete names in each item (settings keys, model ids,

@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Fetches Anthropic release items published since each source's last successful run (first run: a
 // look-back window) and adds new ones to <data>/items.jsonl. Deterministic, no LLM, read-only HTTP
-// to allowlisted hosts. A failed source is reported loudly and its state is not advanced.
+// to allowlisted hosts. A failed source is reported loudly and its state is not advanced. Also
+// refreshes <data>/deprecations.json, the model status table for the retirement check (B-4).
 // Usage: node fetch.mjs [firstRunDays=30] [--data <dir>]
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import { sinceFor, mergeItems, recordSource, heartbeatWarnings, clampDate } from
 import { pluginProvenance, commitProvenance } from "./lib/provenance.mjs";
 import { safeUrl } from "./lib/brief.mjs";
 import { get, errLine } from "./lib/net.mjs";
+import { refreshDeprecations } from "./lib/deprecations.mjs";
 
 const TEXT_MAX = 4000; // a huge item would be billed in full on every lens call
 
@@ -186,6 +188,12 @@ for (const [name, job] of Object.entries(SOURCES)) {
     lines.push(`${name}: FAILED: ${errLine(e)}`);
   }
 }
+// B-4: the deprecations page's model status table, a snapshot for the retirement check, not items.
+// A failure is loud like any source's, and the last good snapshot stays.
+const dep = await refreshDeprecations(DATA, get);
+state = recordSource(state, "deprecations", dep.ok ? { ok: true } : { ok: false, error: dep.error });
+lines.push(dep.line);
+if (!dep.ok) failed++;
 writeJsonl(itemsPath, store);
 writeJson(statePath, state);
 console.log(lines.join("\n"));

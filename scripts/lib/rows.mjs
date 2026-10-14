@@ -5,6 +5,7 @@ import { readJsonl, readJson } from "./store.mjs";
 import { merge } from "./merge.mjs";
 import { applyEvidence } from "./probe.mjs";
 import { rateRow, staleRating, needsOrchestrator, launchedWith } from "./rate.mjs";
+import { retirementRows } from "./deprecations.mjs";
 
 const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
 const COMMIT_SOURCES = new Set(["skills", "cookbooks"]);
@@ -20,7 +21,7 @@ export function lensItems(dir) {
   });
 }
 
-export function loadRows(dir, { evidence = true } = {}) {
+export function loadRows(dir, { evidence = true, now = Date.now() } = {}) {
   const items = lensItems(dir);
   const lenses = Object.fromEntries(["impact", "type", "risk"].map((l) => [l, byId(readJsonl(join(dir, `lens-${l}.jsonl`)))]));
   const ev = new Map();
@@ -50,5 +51,12 @@ export function loadRows(dir, { evidence = true } = {}) {
     const toRate = needsOrchestrator(withEvidence) && withEvidence.projects.length > 0 && (!stored || staleRating(withEvidence, stored, evs, models));
     return { ...withEvidence, ...rateRow(withEvidence, evs, stored, models), toRate };
   });
+  // B-4: code-made retirement rows (Gabriel, 2026-10-14), never sent to the rater.
+  for (const row of retirementRows(models, new Date(now).toISOString().slice(0, 10))) {
+    const foundIn = row.projects.flatMap((p) => models[p].retiring.filter((r) => r.pageId === row.retirement.pageId)
+      .map((r) => ({ project: p, term: r.id, file: `${r.file}:${r.line}` })));
+    const withEvidence = { ...row, evidence: "confirmed", confirmedIn: row.projects, foundIn };
+    rows.push({ ...withEvidence, ...rateRow(withEvidence, [], null, models), toRate: false });
+  }
   return { items, rows, missing: items.length - covered.length };
 }

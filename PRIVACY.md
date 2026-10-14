@@ -11,7 +11,8 @@ receives nothing from it: no analytics, no telemetry, no accounts.
 Public release information only, from `api.github.com`, `platform.claude.com` and `www.anthropic.com`,
 over https, with every redirect checked against that list. Those services see an ordinary request from
 your computer (your IP address and a `whats-new-claude` user agent). If you set the optional GitHub
-token, it is sent only to `api.github.com`.
+token, it is sent only to `api.github.com`. On `platform.claude.com` it reads the release notes feed
+and the model deprecations page (its status table, for the retirement check).
 
 ## What it reads on your computer
 - **Your project folders and your `~/.claude` configuration** (`settings.json`, `CLAUDE.md`,
@@ -58,7 +59,8 @@ In its data folder (`~/.claude/plugins/data/whats-new-claude-*/`; `~/.whats-new-
 are run outside Claude Code): your project list and settings (`config.json`, `config.draft.json`,
 `options.json`), the fetched release items and commit details, the review and rating answers, the
 matched names and file paths (`evidence.jsonl`), the model ids and settings facts found per project
-(`models.json`, `profile.json`), run state and summaries (`state.json`,
+(`models.json`, `profile.json`), the model status table from the deprecations page
+(`deprecations.json`), run state and summaries (`state.json`,
 `summary.json`, `updater.json`), the built page (`results.html`), a usage log of its own Claude calls
 (tokens and cost), a failure log, and the brief export when you write briefs from the page. The
 review page's database holds your selections, brief folders and plain-language rewrites.

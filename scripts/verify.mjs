@@ -12,7 +12,7 @@
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { dataDir, writeJsonl, writeJson } from "./lib/store.mjs";
+import { dataDir, writeJsonl, writeJson, readJson } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
 import { extractTerms } from "./lib/probe.mjs";
@@ -25,6 +25,7 @@ import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
 import { readVersion, versionFor } from "./lib/version.mjs";
 import { codeTies, cliTies, tripwireTies } from "./lib/ties.mjs";
+import { retirementsFor } from "./lib/deprecations.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -56,6 +57,10 @@ const runs = releaseRuns(items);
 const indexes = new Map(), partial = new Set(), models = {}, profiles = {};
 // The installed Claude Code version (B-52), local and free; none unless it parses.
 const installed = readVersion();
+// The model status table fetch.mjs saved (B-4), or null: then the retirement check is unknown, not clear.
+const deprecations = readJson(join(DATA, "deprecations.json"), null);
+const today = new Date().toISOString().slice(0, 10);
+console.log(deprecations ? `retirement check: model status from ${deprecations.fetched}` : "retirement check: no model status saved yet (fetch has not reached the deprecations page); not checked");
 console.log(installed.version ? `Claude Code ${installed.version} (${installed.how})` : `Claude Code version unknown (${installed.how})`);
 for (const p of config.projects) {
   const found = projectFiles(p);
@@ -70,13 +75,15 @@ for (const p of config.projects) {
   const ix = files && useIndex(files, { claudeRoot, archives: new Set(archives.map((a) => a.file)) });
   if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
-  if (ix) models[p.id] = { ...ix.models, claudeCalls: ix.claudeCalls, archives, partial: Boolean(files.capped) };
+  if (ix) models[p.id] = { ...ix.models, claudeCalls: ix.claudeCalls, archives, partial: Boolean(files.capped),
+    retiring: deprecations ? retirementsFor(ix.models.used, deprecations.models, today) : null };
   // What the project's own scripted claude calls switch off (B-59); a capped walk may miss a call.
   if (ix) profiles[p.id].cli = files.capped ? { status: "unknown", calls: [], off: {} } : cliProfile(files, ix.claudeCalls, profiles[p.id]);
   const cli = profiles[p.id]?.cli;
   const off = cli?.status === "known" && Object.keys(cli.off).length ? `; scripted claude calls run with ${Object.keys(cli.off).join(", ")} off` : "";
   console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}${off}` : "no folder configured, not checked"}`);
   for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
+  for (const r of models[p.id]?.retiring || []) console.log(`  ${r.pageId} (${r.file}:${r.line}) ${r.state === "retired" ? `was retired on ${r.retires}` : `retires on ${r.retires}`}`);
 }
 
 // Ties first (M3, P-25): code adds the projects whose own models the item is about (B-48) or that

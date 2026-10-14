@@ -19,7 +19,8 @@ export async function get(url, { json = false } = {}) {
 
 // Error text can carry fetched content (a JSON parse error quotes the response) and it is shown in
 // the user's session, so only the errors get() writes itself are shown; anything else is its class.
-const OWN_ERROR = /^(HTTP \d{3} from [a-z.]+|host not allowlisted: [a-z0-9.-]+|too many redirects)$/;
+// lib/deprecations.mjs's parse errors are code's words and numbers only.
+const OWN_ERROR = /^(HTTP \d{3} from [a-z.]+|host not allowlisted: [a-z0-9.-]+|too many redirects|deprecations page: [a-z0-9 ,]+)$/;
 export function errLine(e) {
   const m = String(e?.message || e);
   return OWN_ERROR.test(m) ? m : `${e?.name || "Error"} (details not shown)`;

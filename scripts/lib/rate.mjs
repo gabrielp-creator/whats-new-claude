@@ -132,6 +132,10 @@ export function bounds(row, project, evs, models) {
   const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
   const named = (u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`;
   const lower = (band) => { if (BANDS[band][1] < hi) [lo, hi] = BANDS[band]; }; // never raises the lenses' band
+  // B-4: the project's pinned models that have a retirement date (verify.mjs, from the deprecations
+  // page). Moving off one of them is urgent, with the date.
+  const retiring = (ids) => (inv?.retiring || []).filter((r) => r.state === "deprecated" && r.retires && ids.includes(r.id));
+  const retires = (rs) => rs.map((r) => `${r.id} retires on ${r.retires}`).join("; ");
 
   // Aliases are never resolved (B-39, P-14): an alias in a family the item names, with no pinned id
   // of that family, may run any of its models, so the project is asked to confirm, at soon. A closed
@@ -147,7 +151,16 @@ export function bounds(row, project, evs, models) {
   };
   const known = [...uses, ...new Set(aliases.map((a) => `the \`${a.alias}\` alias`))];
 
-  if (isLaunch(row) && refs.length && inv) {
+  if (row.codeMade === "retirement") {
+    // B-4: a code-made retirement row (lib/deprecations.mjs) for a model this project pins.
+    [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none;
+    const r = (inv?.retiring || []).find((x) => x.pageId === row.retirement.pageId);
+    if (r) {
+      evidence = "confirmed"; foundIn = [{ term: r.id, file: at(r) }];
+      note = r.state === "retired" ? `retired on ${r.retires}, so requests to it fail: confirm nothing still sends it (${at(r)})`
+        : `${r.retires ? `retires on ${r.retires}` : "deprecated, retirement date not announced yet"}${r.replacement ? `, replacement ${r.replacement}` : ""}: used at ${at(r)}`;
+    }
+  } else if (isLaunch(row) && refs.length && inv) {
     const l = launchStatus(refs, uses);
     [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none; // decided here, not by the generic check above
     if (l.status === "adopted") {
@@ -155,6 +168,8 @@ export function bounds(row, project, evs, models) {
       note = `already uses ${list(l.uses)}${l.older.length ? ` (also ${list(l.older)})` : ""}: confirm settings and pricing`;
     } else if (l.status === "upgrade") {
       evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`;
+      const r = retiring(l.uses);
+      if (r.length) { [lo, hi] = BANDS.urgent; note += `; ${retires(r)}`; } // AK 2
     } else if (exposed) {
       asAlias();
     } else if (inv.partial) {
@@ -210,6 +225,9 @@ export function bounds(row, project, evs, models) {
       if (next.length && row.risk !== "deprecation") lower("soon");
       note = `uses ${list(inUse.map(named))}${next.length ? `; applies when you move to ${list(next)}` : ""}`;
     }
+    // B-4: on a model that is retiring, the move is due anyway: urgent, with the date.
+    const r = retiring(inUse.map((u) => u.id));
+    if (r.length) { [lo, hi] = BANDS.urgent; note += `; ${retires(r)}`; }
   } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
     // A retirement or breaking change in an alias's family: the alias may run the affected model.
     asAlias();
@@ -271,8 +289,8 @@ export function rateRow(row, evs, orch, models) {
     return {
       project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note,
       score: score ?? codeScore(row, b),
-      provisional: score === null && project !== null && needsOrchestrator(row),
-      do: a ? act : null,
+      provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade,
+      do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)
       why: a && !injection ? oneLine(a.why) : "",
     };
   });
