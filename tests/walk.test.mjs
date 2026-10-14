@@ -37,6 +37,45 @@ test("deferred folders are still read when the cap allows", () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+// A project with agent worktrees and a nested checkout (B-49): copies of the repo, possibly on other
+// branches, are not the project's own files.
+function worktreeFixture({ rootIsWorktree = false } = {}) {
+  const root = mkdtempSync(join(tmpdir(), "wnc-walk-wt-"));
+  for (const d of [".claude/agents", ".claude/worktrees/w/docs", ".claude/worktrees/pruned", "vendor/sub", "docs"]) mkdirSync(join(root, d), { recursive: true });
+  writeFileSync(join(root, ".claude/agents/a.md"), "---\nmodel: sonnet\n---\n");
+  writeFileSync(join(root, ".claude/worktrees/w/.git"), "gitdir: ../../../.git/worktrees/w\n");
+  writeFileSync(join(root, ".claude/worktrees/w/docs/d.md"), "Uses the claude-api skill.");
+  writeFileSync(join(root, ".claude/worktrees/pruned/notes.md"), "claude-api");
+  writeFileSync(join(root, "vendor/sub/.git"), "gitdir: ../../.git/modules/sub\n");
+  writeFileSync(join(root, "vendor/sub/llm.ts"), 'export const MODEL = "claude-sonnet-4-6";');
+  writeFileSync(join(root, "docs/notes.md"), "plain notes");
+  if (rootIsWorktree) writeFileSync(join(root, ".git"), "gitdir: elsewhere\n");
+  return root;
+}
+
+test("agent worktrees and folders holding a .git file are not walked (B-49)", () => {
+  const root = worktreeFixture();
+  try {
+    const names = collect(root, null).map((f) => f.file).sort();
+    assert.deepEqual(names, [".claude/agents/a.md", "docs/notes.md"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a term found only in a worktree copy is not found at all (B-49, fixture LNC 7)", () => {
+  const root = worktreeFixture();
+  try {
+    assert.ok(collect(root, null).every((f) => !f.text.includes("claude-api")));
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("a project root that is itself a worktree is still walked (B-49)", () => {
+  const root = worktreeFixture({ rootIsWorktree: true });
+  try {
+    const names = collect(root, null).map((f) => f.file).sort();
+    assert.deepEqual(names, [".claude/agents/a.md", "docs/notes.md"]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("blocked folders are never entered", () => {
   const root = fixture();
   try {

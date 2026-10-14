@@ -32,10 +32,13 @@ export function collect(root, only, { blocked = [], briefDirs = new Set(), limit
   // Each folder's files first, then its subfolders; output and data folders wait until everything
   // else has been read, so a large one cannot spend the cap before the source is reached (B-28).
   const later = [];
-  const walk = (dir) => {
+  const walk = (dir, nested = false) => {
     if (full() || ++dirs > limits.dirs) return;
     let entries = [];
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    // A subfolder holding a .git file is a worktree or submodule: another checkout, maybe on another
+    // branch, not the project's own files (B-49). The root may itself be a worktree.
+    if (nested && entries.some((e) => e.name === ".git" && e.isFile())) return;
     for (const e of entries) {
       if (e.isFile() && usable(e.name)) read(join(dir, e.name), relative(root, join(dir, e.name)).split(sep).join("/"));
       if (full()) return;
@@ -43,7 +46,9 @@ export function collect(root, only, { blocked = [], briefDirs = new Set(), limit
     for (const e of entries) {
       const p = join(dir, e.name);
       if (!e.isDirectory() || SKIP_DIRS.has(e.name) || briefDirs.has(resolve(p).toLowerCase()) || isBlocked(e.name)) continue;
-      if (DEFER.test(e.name)) later.push(p); else walk(p);
+      // Claude Code's agent worktrees, skipped whole even when one has lost its .git file (B-49).
+      if (e.name === "worktrees" && basename(dir) === ".claude") continue;
+      if (DEFER.test(e.name)) later.push(p); else walk(p, true);
       if (full()) return;
     }
   };
@@ -52,7 +57,7 @@ export function collect(root, only, { blocked = [], briefDirs = new Set(), limit
     if (!existsSync(p)) continue;
     if (statSync(p).isFile()) { if (usable(basename(p))) read(p, sub); } else walk(p);
   }
-  while (later.length && !full()) walk(later.shift());
+  while (later.length && !full()) walk(later.shift(), true);
   files.capped = full();
   return files;
 }

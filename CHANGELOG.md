@@ -15,6 +15,10 @@
   item that names a security, breaking, deprecation or retirement change is never in the lowest band,
   whatever the reviews answered (18 of 3646 stored items on 2026-10-13). Commits are dated when they
   landed, not by their author's date, and no item date can be in the future.
+- Fix: the file check read Claude Code's agent worktrees (`.claude/worktrees/`) and other nested
+  checkouts as the project's own files, so a copy on another branch could confirm an item or add a
+  model id. It now skips `.claude/worktrees` and any subfolder holding a `.git` file (a worktree or
+  submodule); a project folder that is itself a worktree is still read.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
