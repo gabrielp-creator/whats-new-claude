@@ -72,6 +72,52 @@
   plugin's own folder (it sends nothing and is not a model call), and records it per project in
   `profile.json`. Output that is not a version records none. A project that depends on the Agent SDK
   runs the CLI the SDK bundles, so its version is recorded as unknown.
+- Items now reach the projects they are about, not only the ones the reviews named. A release about a
+  model your code pins reaches that project; an Agent SDK release reaches the projects that depend on
+  that SDK, and no longer the ones that don't; a Claude Code change that a project's own scripted
+  `claude` calls switch off moves to your setup instead (security, breaking and deprecation items stay,
+  with a note); and an official security, breaking or deprecation item that reached no project is
+  checked against every project's own settings.
+- Which models a change is about is now read from its wording: ranges ("Opus 4.7+", "4.7 and newer",
+  "4.0 to 4.7"), "Claude 3.x", the model a breaking change is on ("code written for X can break on Y"),
+  and "earlier models aren't affected". A name found in your settings no longer confirms a change that
+  is about models you don't use, and a confirmation resting only on a setting's key no longer raises
+  an item. Open wording ("including", "other models") rules nothing out.
+- A launch is now an item that says a model was launched, added or introduced, or made the default; an
+  item saying a model is "available" somewhere is not. Only the newest model named per family is the
+  launch, so a predecessor named for comparison no longer reads as "already adopted". Price and limit
+  changes are their own kind: "check your price table" for a model you use, one line otherwise; a
+  caching price also needs `cache_control` in your code.
+- A breaking change on a model your code pins is confirmed with the file and line where it is used.
+  When it came with a launch you already run, you are asked to confirm it is handled, at soon.
+- **New fetch target:** the model deprecations page on `platform.claude.com` (an allowlisted host),
+  read in its markdown form for a free retirement check with no Claude calls. A model id your code pins
+  that is deprecated gets its own row, urgent, with the retirement date and the recommended
+  replacement; one that is already retired gets a row asking you to confirm nothing still sends it.
+  Upgrades from a retiring model are urgent with the date. A page that does not parse whole is an
+  error, shown, and the last good copy is kept.
+- Bands follow what your files show. An upgrade is soon, not urgent, unless your current model is
+  retiring. An item not used here (not found, or about other models) drops to later; security,
+  breaking and deprecation items stay in soon, below the 7+ list. The urgent floor for breaking and
+  security items holds only when your files confirm the exposure and the reviews agree on what the
+  item is. A new feature's own name not being in your files no longer counts against it.
+- Claude Code fixes already in the version you run, with nothing in your settings that interacts with
+  them, are listed once as "Already in your version" with no prompt and no rating call. New features,
+  model launches and breaking changes stay rated.
+- The rater now sees where each model is called, and its own score and any disagreement with the band
+  are kept and shown ("rater disagrees"); they never move an item.
+- Silent-failure counters in `summary.json` (open model scopes, ties added and dropped, unreadable
+  scripted calls, items held at soon, and more); the session-start reminder names any that jumps.
+- Briefs are grouped: Confirm handled, Act now, Later, then a one-line appendix (Not used here,
+  Already in your version) with no prompts. One launch reported by several sources is one entry with
+  every link. Prompts name only what the plugin's own check found (models and where they are called,
+  an alias and its line, hooks and rule kinds), and a model change first looks for a decision you have
+  already made. Entry headings are the plugin's own words; release text stays inside the quote. No
+  brief is written for a project with nothing to confirm, act on or keep for later, and an export with
+  nothing at your threshold falls back to 7+ and says so. New configs put briefs in `docs/` when that
+  is where a project already keeps them.
+- Each rating is stamped with the plugin version. Ratings made before 0.3.1 are marked "rated before
+  0.3.1" and redone on your next run, counted in the same cost question, never as new items.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
