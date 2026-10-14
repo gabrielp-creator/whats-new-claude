@@ -5,6 +5,7 @@
 import { injectionFlag } from "./batch.mjs";
 import { parseModel, modelRefs, launchStatus, isLaunchText, newestByFamily } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
+import { STATE_NAME } from "./brief.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
@@ -334,7 +335,7 @@ export function bounds(row, project, evs, models) {
 }
 
 // B-42 (P-19, P-22): the one state a rating is in, shared by the page, the terminal and the brief.
-export const STATES = { confirm: "Confirm handled", act: "Act now", later: "Later", "not-used": "Not used here", installed: "Already in your version" };
+export const STATES = STATE_NAME; // the phrases live with the brief, which the page inlines
 const stateOf = (b) => (b.installed ? "installed"
   : b.evidence === "other-models" || (b.evidence === "not-found" && !b.fresh) ? "not-used"
     : b.confirm ? "confirm" : b.lo >= BANDS.soon[0] ? "act" : "later");

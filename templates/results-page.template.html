@@ -274,6 +274,8 @@ const EVIDENCE = { adopted: "already adopted", upgrade: "upgrade candidate", "ot
   mentioned: "named only in docs or comments", alias: "model alias in use", unknown: "model not known" };
 function evidenceTags(v, r) {
   if (!r) return;
+  // B-42 (P-22): the same phrase for a state as the brief and the terminal (brief lib STATE_NAME).
+  if (r.state && STATE_NAME[r.state]) v.append(el("span", r.state === "confirm" || r.state === "act" ? "tag ok" : "tag", STATE_NAME[r.state]));
   if (r.evidence === "confirmed" && r.foundIn.length) v.append(el("span", "tag ok", `found: ${r.foundIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`));
   else if (r.evidence === "not-found") v.append(el("span", "tag", "names not seen in this project's files"));
   else if (EVIDENCE[r.evidence]) v.append(el("span", r.evidence === "upgrade" ? "tag ok" : "tag", EVIDENCE[r.evidence]));
@@ -381,12 +383,16 @@ function setPick(ids, on) {
   for (const id of ids) on ? picks.set(id, picks.get(id) || defaultProjects(byId.get(id))) : picks.delete(id);
   persist(ids);
 }
-// Top picks select an item for one project at a time.
+// Top picks select an item for one project at a time, and an event (B-38) as a whole.
+const eventIds = (id) => { const e = byId.get(id)?.event; return e ? items.filter((x) => x.event === e).map((x) => x.id) : [id]; };
 function setPickFor(id, project, on) {
-  const cur = picks.get(id) || [];
-  const next = on ? [...new Set([...cur, project])] : cur.filter((p) => p !== project);
-  next.length ? picks.set(id, next) : picks.delete(id);
-  persist([id]);
+  const ids = eventIds(id);
+  for (const x of ids) {
+    const cur = picks.get(x) || [];
+    const next = on ? [...new Set([...cur, project])] : cur.filter((p) => p !== project);
+    next.length ? picks.set(x, next) : picks.delete(x);
+  }
+  persist(ids);
 }
 function setProjects(id, projects) {
   picks.set(id, projects);
@@ -404,8 +410,12 @@ $("pick-clear").addEventListener("click", () => setPick([...picks.keys()], false
 $("open-briefs").addEventListener("click", () => { state.view = state.view === "briefs" ? "list" : "briefs"; updateTray(); render(); window.scrollTo(0, 0); });
 
 // ---- briefs: one per project, built by the same code as scripts/write-briefs.mjs ----
+// As write-briefs.mjs: the project's next step from its rating, and a picked item's whole event (B-38).
 function briefItems(project) {
-  return [...picks].filter(([, ps]) => ps.includes(project)).map(([id]) => ({ ...byId.get(id), plain: plain.get(id) || "" })).filter((i) => i.id);
+  const chosen = [...picks].filter(([, ps]) => ps.includes(project)).map(([id]) => byId.get(id)).filter(Boolean);
+  const events = new Set(chosen.map((i) => i.event).filter(Boolean));
+  const all = [...chosen, ...items.filter((i) => i.event && events.has(i.event) && !chosen.includes(i))];
+  return all.map((i) => ({ ...i, action: i.ratings.find((r) => r.project === project)?.do || i.action, plain: plain.get(i.id) || "" }));
 }
 function renderBriefs() {
   const list = $("list"); list.replaceChildren();
@@ -431,6 +441,8 @@ function renderBriefs() {
     const dir = folders.get(p) || defaultBriefDir(p);
     const md = buildBrief(p, briefItems(p), { date: TODAY, dir, rootLabel: DATA.rootLabel });
     card.append(el("h3", null, `${p} · ${briefItems(p).length} item${briefItems(p).length === 1 ? "" : "s"}`));
+    // P-21: only items not used here or already in the installed version: no brief to write.
+    if (!md) { card.append(el("p", "note", "Nothing to confirm, act on or keep for later here: these items are not used in this project or are already in its Claude Code version. No brief.")); wrap.append(card); continue; }
     const fl = el("div", "folder"); const inp = el("input"); inp.type = "text"; inp.id = `dir-${p}`; inp.value = dir;
     inp.setAttribute("aria-label", `Folder for the ${p} brief, relative to ${DATA.rootLabel}`);
     const save = el("button", "btn", "Save folder"); save.type = "button";
@@ -497,7 +509,12 @@ function topGroups() {
       groups.get(r.project).push({ i, r });
     }
   }
-  for (const g of groups.values()) g.sort((a, b) => b.r.score - a.r.score || (a.i.date < b.i.date ? 1 : -1));
+  for (const [p, g] of groups) {
+    g.sort((a, b) => b.r.score - a.r.score || (a.i.date < b.i.date ? 1 : -1));
+    // B-38: one card per event, the best-rated member's (the page's twin of the brief's one entry).
+    const seen = new Set();
+    groups.set(p, g.filter(({ i }) => !i.event || (!seen.has(i.event) && seen.add(i.event))));
+  }
   return groups;
 }
 function topCard({ i, r }, project) {
@@ -510,7 +527,8 @@ function topCard({ i, r }, project) {
   const head = el("div", "head");
   const sc = el("span", "score", r.score.toFixed(1));
   if (r.provisional) { sc.append(el("small", null, "provisional")); sc.title = "Not rated by the reviewer yet; this is code's estimate. The next /whats-new run rates it."; }
-  head.append(sc, el("span", null, `${i.source} · ${i.date}`));
+  const also = i.event ? items.filter((x) => x.event === i.event && x !== i) : [];
+  head.append(sc, el("span", null, `${i.source} · ${i.date}${also.length ? ` · ${also.length + 1} sources` : ""}`));
   if (i.fyiOnly) head.append(el("span", "tag", "third-party: FYI only"));
   const ident = el("span", "ident", i.id); head.append(ident);
   body.append(head, el("p", "headline", headline(i)));
@@ -528,6 +546,8 @@ function topCard({ i, r }, project) {
   for (const f of i.flags) body.append(el("p", "flag", f));
   const acts = el("div", "actions");
   if (safeUrl(i.url)) { const a = el("a", null, "Source"); a.href = safeUrl(i.url); a.target = "_blank"; a.rel = "noopener"; acts.append(a); }
+  const links = new Set([safeUrl(i.url)]);
+  for (const x of also) if (safeUrl(x.url) && !links.has(safeUrl(x.url)) && links.add(safeUrl(x.url))) { const a = el("a", null, `Also: ${x.source}`); a.href = safeUrl(x.url); a.target = "_blank"; a.rel = "noopener"; acts.append(a); }
   const more = el("button", "link", "Full details"); more.type = "button";
   more.addEventListener("click", () => { $("q").value = i.id; $("f-when").value = "all"; $("custom").hidden = true; setMode("all"); });
   acts.append(more);
@@ -555,7 +575,7 @@ function renderTop() {
   const exp = el("button", "primary", `Export top picks (${pairs})`); exp.type = "button"; exp.disabled = !pairs;
   exp.addEventListener("click", () => {
     const ids = [];
-    for (const p of projects) for (const { i } of groups.get(p)) { picks.set(i.id, [...new Set([...(picks.get(i.id) || []), p])]); ids.push(i.id); }
+    for (const p of projects) for (const { i } of groups.get(p)) for (const x of eventIds(i.id)) { picks.set(x, [...new Set([...(picks.get(x) || []), p])]); ids.push(x); }
     state.view = "briefs";
     persist([...new Set(ids)]);
     window.scrollTo(0, 0);

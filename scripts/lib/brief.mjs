@@ -82,7 +82,7 @@ const GROUPS = [
   ["later", "Later", "worth knowing, nothing urgent."],
 ];
 const APPENDIX = [["not-used", "Not used here"], ["installed", "Already in your version"]];
-const STATE_NAME = { confirm: "Confirm handled", act: "Act now", later: "Later", "not-used": "Not used here", installed: "Already in your version" };
+export const STATE_NAME = { confirm: "Confirm handled", act: "Act now", later: "Later", "not-used": "Not used here", installed: "Already in your version" };
 // In an event, a project that already runs the launched model confirms (RF 6); otherwise act wins.
 const PRIORITY = { confirm: 0, act: 1, later: 2, "not-used": 3, installed: 4 };
 // Without a rating (a selection saved before 0.3.1) the item's own urgency decides.
