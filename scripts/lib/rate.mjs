@@ -63,6 +63,34 @@ export function launchedWith(rows) {
   return out;
 }
 
+// B-38: one event, one entry. By row id, an event key shared by first-party launches of the same
+// model within 7 days of each other (skills commit, Claude Code changelog, platform note: keyed by the
+// first model each launch names) and by first-party breaking notes in that window that name it (not
+// deprecations: a retirement is its own event, even when it names the launch as its replacement). Fork
+// and third-party items never join (P-16); an item alone is no event.
+const EVENT_WINDOW = 7 * 86400000;
+export function eventKeys(rows) {
+  const said = (r) => `${r.title || ""} ${r.text || ""}`;
+  const launches = rows.filter((r) => !r.fyiOnly && isLaunch(r)).map((r) => ({ r, id: newestByFamily(modelRefs(said(r))).values().next().value?.id, at: Date.parse(r.date) }))
+    .filter((l) => l.id && Number.isFinite(l.at)).sort((a, b) => a.at - b.at);
+  const clusters = [];
+  for (const l of launches) {
+    let c = clusters.find((x) => x.id === l.id && l.at - x.last <= EVENT_WINDOW);
+    if (!c) clusters.push((c = { id: l.id, first: l.at, last: l.at, rows: [] }));
+    c.last = l.at; c.rows.push(l.r);
+  }
+  for (const c of clusters) {
+    for (const r of rows) {
+      const at = Date.parse(r.date);
+      if (r.fyiOnly || isLaunch(r) || !isBreaking(r) || r.risk === "deprecation" || !(at >= c.first - EVENT_WINDOW && at <= c.last + EVENT_WINDOW)) continue;
+      if (modelRefs(said(r)).some((m) => m.id === c.id) && !c.rows.includes(r)) c.rows.push(r);
+    }
+  }
+  const out = new Map();
+  for (const c of clusters) if (c.rows.length > 1) for (const r of c.rows) if (!out.has(r.id)) out.set(r.id, `launch:${c.id}:${new Date(c.first).toISOString().slice(0, 10)}`);
+  return out;
+}
+
 const isBreaking = (row) => row.risk === "breaking" || row.risk === "deprecation" || row.type === "breaking-or-deprecation";
 // "2.1.289" older than "2.1.290": numeric, part by part (B-52).
 const olderThan = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
@@ -123,7 +151,7 @@ export function bounds(row, project, evs, models) {
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
   const mentionedIn = e?.mentioned || [];
-  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false, fresh = false, due = false, heldSoon = false;
+  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false, fresh = false, due = false, heldSoon = false, confirm = false, alias = null;
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
   else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) {
@@ -164,7 +192,7 @@ export function bounds(row, project, evs, models) {
   const inFamily = aliases.filter((a) => (families.has(a.family) || families.has(null)) && !pinned.has(a.family));
   const exposed = inFamily.find((a) => !/\.md$/i.test(a.file)) || inFamily[0]; // cite code before front matter
   const asAlias = (a = exposed) => {
-    [lo, hi] = BANDS.soon; evidence = "alias";
+    [lo, hi] = BANDS.soon; evidence = "alias"; confirm = true; alias = { alias: a.alias, file: a.file, line: a.line };
     note = `your \`${a.alias}\` alias may have moved: confirm which model it runs (${a.file}:${a.line})`;
   };
   const known = [...uses, ...new Set(aliases.map((a) => `the \`${a.alias}\` alias`))];
@@ -175,6 +203,7 @@ export function bounds(row, project, evs, models) {
     const r = (inv?.retiring || []).find((x) => x.pageId === row.retirement.pageId);
     if (r) {
       evidence = "confirmed"; foundIn = [{ term: r.id, file: at(r) }];
+      confirm = r.state === "retired";
       note = r.state === "retired" ? `retired on ${r.retires}, so requests to it fail: confirm nothing still sends it (${at(r)})`
         : `${r.retires ? `retires on ${r.retires}` : "deprecated, retirement date not announced yet"}${r.replacement ? `, replacement ${r.replacement}` : ""}: used at ${at(r)}`;
     }
@@ -182,7 +211,7 @@ export function bounds(row, project, evs, models) {
     const l = launchStatus(refs, uses);
     [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none; // decided here, not by the generic check above
     if (l.status === "adopted") {
-      evidence = "adopted"; hi = Math.min(hi, ADOPTED_CAP); foundIn = cite(usedOf(l.uses));
+      evidence = "adopted"; hi = Math.min(hi, ADOPTED_CAP); foundIn = cite(usedOf(l.uses)); confirm = true;
       note = `already uses ${list(l.uses)}${l.older.length ? ` (also ${list(l.older)})` : ""}: confirm settings and pricing`;
     } else if (l.status === "upgrade") {
       evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`; foundIn = cite(usedOf(l.uses));
@@ -237,7 +266,7 @@ export function bounds(row, project, evs, models) {
     evidence = "confirmed";
     foundIn = [...cited, ...foundIn.filter((f) => !cited.some((c) => c.term === f.term))];
     if (met.length && row.risk !== "deprecation") {
-      lower("soon");
+      lower("soon"); confirm = true;
       note = `already runs ${list(met.map(named))}, launched with this change: confirm it is handled`;
     } else {
       if (next.length && row.risk !== "deprecation") lower("soon");
@@ -301,8 +330,14 @@ export function bounds(row, project, evs, models) {
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
   // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
   if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, heldSoon, ...(installed ? { installed } : {}) };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, heldSoon, fresh, confirm, alias, ...(installed ? { installed } : {}) };
 }
+
+// B-42 (P-19, P-22): the one state a rating is in, shared by the page, the terminal and the brief.
+export const STATES = { confirm: "Confirm handled", act: "Act now", later: "Later", "not-used": "Not used here", installed: "Already in your version" };
+const stateOf = (b) => (b.installed ? "installed"
+  : b.evidence === "other-models" || (b.evidence === "not-found" && !b.fresh) ? "not-used"
+    : b.confirm ? "confirm" : b.lo >= BANDS.soon[0] ? "act" : "later");
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
 
@@ -334,6 +369,7 @@ export function rateRow(row, evs, orch, models) {
     if (b.priceOnly && act === "model-refresh") act = "read"; // a price or limit change needs no model change (B-57)
     return {
       project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note, ...(b.installed ? { installed: b.installed } : {}), ...(b.heldSoon ? { heldSoon: true } : {}),
+      state: stateOf(b), ...(b.alias ? { alias: b.alias } : {}),
       score: score ?? codeScore(row, b),
       provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade && !b.installed,
       do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)

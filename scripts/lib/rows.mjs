@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { readJsonl, readJson } from "./store.mjs";
 import { merge } from "./merge.mjs";
 import { applyEvidence } from "./probe.mjs";
-import { rateRow, staleRating, needsOrchestrator, launchedWith } from "./rate.mjs";
+import { rateRow, staleRating, needsOrchestrator, launchedWith, eventKeys } from "./rate.mjs";
 import { retirementRows } from "./deprecations.mjs";
 
 const byId = (rows) => new Map(rows.map((r) => [r.id, r]));
@@ -35,8 +35,11 @@ export function loadRows(dir, { evidence = true, now = Date.now() } = {}) {
   }));
   // B-45: the models first-party launches put out within 7 days of each item.
   const near = launchedWith(merged);
+  // B-38: one event, one entry: launches of a model from several sources, and their breaking notes.
+  const events = eventKeys(merged);
   const rows = merged.map((row) => {
     if (near.has(row.id)) row.withLaunch = near.get(row.id);
+    if (events.has(row.id)) row.event = events.get(row.id);
     const evs = ev.get(row.id) || [];
     // Ties code added or dropped after the lenses (verify.mjs, M3): stored, so every reader sees the
     // same rows. A dropped tie leaves projects (the rater never sees it) and is listed in dropped.

@@ -834,3 +834,54 @@ test("counters: the P-4 floor marks the pairs it holds at soon (heldSoon)", () =
   assert.equal(bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5-20250929"], found: [] })], inv(["claude-opus-4-8"])).heldSoon, true);
   assert.equal(bounds(row({ type: "improvement", risk: "none" }), "app", [ev({ checked: ["fooBarSetting"], found: [] })]).heldSoon, false, "a plain item drops to later, nothing held");
 });
+
+// B-38 (RF 7, LNC 3, P-16): one event, one entry.
+import { eventKeys } from "../scripts/lib/rate.mjs";
+test("B-38: launches of one model within 7 days, and breaking notes naming it, share an event; forks never join", () => {
+  const l = (id, source, date, text, o = {}) => ({ id, source, date, title: "", text, type: "model", risk: "none", fyiOnly: false, ...o });
+  const rows = [
+    l("p:1", "platform-release-notes", "2026-10-07", "We've launched Claude Haiku 5.5 (claude-haiku-5-5), our most capable fast model."),
+    l("c:1", "claude-code", "2026-10-07", "Added Claude Haiku 5.5 (`claude-haiku-5-5`), now the default Haiku model"),
+    l("s:1", "skills", "2026-10-09", "Add Claude Haiku 5.5 (`claude-haiku-5-5`) as the current Haiku, with Claude Haiku 4.5 as the previous one"),
+    l("b:1", "platform-release-notes", "2026-10-07", "Code written for Claude Haiku 4.5 can break on Claude Haiku 5.5. Manual thinking returns a 400 error.", { type: "breaking-or-deprecation", risk: "breaking" }),
+    l("f:1", "skills", "2026-10-08", "Added Claude Haiku 5.5 to our fork", { fyiOnly: true, provenance: "external-fork" }),
+    l("p:2", "platform-release-notes", "2026-09-28", "We've launched Claude Sonnet 5.5 (claude-sonnet-5-5)."),
+    l("p:3", "platform-release-notes", "2026-11-20", "We've launched Claude Haiku 5.5 (claude-haiku-5-5) on another cloud."),
+    l("x:1", "claude-code", "2026-10-07", "Fixed a crash in /resume", { type: "bug-fix" }),
+  ];
+  const k = eventKeys(rows);
+  assert.ok(k.get("p:1"));
+  for (const id of ["c:1", "s:1", "b:1"]) assert.equal(k.get(id), k.get("p:1"), id);
+  assert.equal(k.get("f:1"), undefined, "a fork never joins a first-party event (P-16)");
+  assert.equal(k.get("p:2"), undefined, "a launch with no other source is no event");
+  assert.notEqual(k.get("p:3"), k.get("p:1"), "six weeks later is another event");
+  assert.equal(k.get("x:1"), undefined);
+});
+
+test("B-38: a deprecation naming the launched model as its replacement is its own event, not part of the launch", () => {
+  const l = (id, source, date, text, o = {}) => ({ id, source, date, title: "", text, type: "model", risk: "none", fyiOnly: false, ...o });
+  const rows = [
+    l("p:1", "platform-release-notes", "2026-09-28", "We've launched Claude Sonnet 5.5 (claude-sonnet-5-5)."),
+    l("c:1", "claude-code", "2026-09-28", "Added Claude Sonnet 5.5 (`claude-sonnet-5-5`)"),
+    l("d:1", "platform-release-notes", "2026-09-30", "We announced the deprecation of the Claude Sonnet 4.5 model (claude-sonnet-4-5-20250929). We recommend migrating to Claude Sonnet 5.5.", { type: "breaking-or-deprecation", risk: "deprecation" }),
+  ];
+  const k = eventKeys(rows);
+  assert.equal(k.get("c:1"), k.get("p:1"));
+  assert.equal(k.get("d:1"), undefined);
+});
+
+// B-42 (P-19, P-22): one code-made state per rating, shared by the page, the terminal and the brief.
+test("B-42: each rating carries one state: confirm, act, later, not-used or installed", () => {
+  const st = (rw, evs, models) => rateRow({ ...rw, projects: ["app"] }, evs, null, models).ratings[0].state;
+  const sonnetAliasOnly = { app: { models: [], aliases: [{ alias: "sonnet", family: "sonnet", file: "scripts/run.mjs", line: 14 }], partial: false } };
+  assert.equal(st(sonnetLaunch, [], sonnetAliasOnly), "confirm", "an alias asks which model it runs");
+  assert.equal(st(launch, foundOpus, inv(["claude-opus-5-5"])), "confirm", "adopted: confirm settings and pricing");
+  assert.equal(st({ ...opusThinking, withLaunch: ["claude-opus-5-5"] }, [], runs55), "confirm", "a launch-day breaking change the project has met (RF 6)");
+  assert.equal(st(launch, missOpus, inv(["claude-opus-4-8"])), "act", "an upgrade, soon");
+  assert.equal(st(row({ urgencyLabel: "later" }), [], undefined), "later");
+  assert.equal(st(sonnetBreak, [], inv(["claude-sonnet-4-6"])), "not-used");
+  assert.equal(st(row({ type: "improvement", risk: "none" }), [ev({ checked: ["fooBarSetting"], found: [] })], undefined), "not-used");
+  assert.equal(st(ccFix(), [], onCC("2.1.296")), "installed");
+  const sites = rateRow({ ...sonnetLaunch, projects: ["app"] }, [], null, sonnetAliasOnly).ratings[0];
+  assert.deepEqual(sites.alias, { alias: "sonnet", file: "scripts/run.mjs", line: 14 }, "the alias to confirm, for the prompt");
+});
