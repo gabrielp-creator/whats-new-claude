@@ -74,7 +74,8 @@ test("B-50: a keyword hit on a change scoped to other models is not a confirmati
   const r = applyEvidence(effort, keyHit, { app: { models: ["claude-opus-5-5"], partial: false } });
   assert.equal(r.urgency, 82);
   assert.deepEqual(r.confirmedIn, []);
-  assert.notEqual(r.evidence, "confirmed");
+  // R-5 (release review): the name was found, so the row is context, never "names not seen"
+  assert.equal(r.evidence, "mentioned");
 });
 
 test("B-50: a confirmation resting only on a camelCase key in a settings file keeps its tier without +2", () => {

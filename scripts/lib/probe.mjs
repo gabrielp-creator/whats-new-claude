@@ -60,7 +60,8 @@ export function applyEvidence(row, evs, models) {
     const urgency = row.urgency + (found.some((e) => e.found.some((f) => !genericKey(f))) ? 2 : 0);
     return { ...row, evidence: "confirmed", confirmedIn: found.map((e) => e.project), urgency, urgencyLabel: labelFor(urgency) };
   }
-  if (evs.some((e) => e.mentioned?.length)) return { ...row, evidence: "mentioned", confirmedIn: [] };
+  // A name found but set aside by the model scope is context too, never "not found" (R-5).
+  if (evs.some((e) => e.mentioned?.length || e.found.length)) return { ...row, evidence: "mentioned", confirmedIn: [] };
   const checked = new Set(evs.filter((e) => e.checked.length).map((e) => e.project));
   const all = row.projects.length > 0 && row.projects.every((p) => checked.has(p));
   return { ...row, evidence: all ? "not-found" : "unchecked", confirmedIn: [] };
