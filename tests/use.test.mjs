@@ -10,10 +10,10 @@ test("fileUse: a closed list of config files and code files are 'used'; everythi
     ".github/workflows/ci.yml", ".github/workflows/release.yaml", "src/a.ts", "src/b.tsx", "scripts/x.mjs", "lib/c.cjs", "app/d.py", ".claude/hooks/h.sh", "tools/e.ps1", "web/f.jsx", "g.js"])
     assert.equal(fileUse(f), "used", f);
   for (const f of ["docs/x.md", "README.md", "CLAUDE.md", "review/round3/x.md", "index.html", "tsconfig.json", "package-lock.json",
-    ".dataset-snapshots/a.json", "db/schema.sql", "notes.txt", "docker-compose.yml", ".github/dependabot.yml", "style.css",
+    ".snapshots/a.json", "db/schema.sql", "notes.txt", "docker-compose.yml", ".github/dependabot.yml", "style.css",
     "tests/a.mjs", "test/b.py", "src/a.test.ts", "src/b.spec.js", "src/__tests__/c.ts", "fixtures/f.ts", "src/__fixtures__/g.ts",
     "proofs/p.mjs", "logs/run.mjs", "app/test_x.py", "app/x_test.py",
-    "src/brief_render_proof.ts", "src/proof.ts", "src/proof_sweep.ts", "src/gate-proof-phase.ts", "src/strategy_smoke.ts", "src/smoke.mjs"])
+    "src/render_proof.ts", "src/proof.ts", "src/proof_sweep.ts", "src/step-proof-run.ts", "src/api_smoke.ts", "src/smoke.mjs"])
     assert.equal(fileUse(f), "mentioned", f);
   for (const f of ["src/waterproof.ts", "src/smokescreen.ts", "src/proofreader.py"]) assert.equal(fileUse(f), "used", `${f}: a word that only contains proof or smoke`);
   for (const f of [".claude/agents/a.md", ".claude/commands/c.md", ".claude/lenses/l.md", ".claude/skills/s/SKILL.md", ".claude/agents/sub/b.md"])
@@ -60,7 +60,7 @@ test("the models a project's code uses, by first file and line, without duplicat
 
 test("a record is not use (NC 1, LNC 2): ids in a review record are mentions, the code's id is used, with file and line", () => {
   const ix = useIndex([
-    { file: "review/round3/lens-3-recheck.md", text: "model: claude-sonnet-4-6, date: 2026-06-10" },
+    { file: "review/round1/notes.md", text: "model: claude-sonnet-4-6, date: 2026-06-10" },
     { file: "src/a.ts", text: "import x from 'y';\nconst M = 'claude-opus-4-8';" },
   ]);
   assert.deepEqual(ix.models.models, ["claude-opus-4-8"]);
@@ -80,7 +80,7 @@ test("a doc mention is not use (SU 3): setup's skill prose names an id, settings
 });
 
 test("data records are mentions (P-9): a dataset snapshot holding an id does not make it used", () => {
-  const ix = useIndex([{ file: ".dataset-snapshots/run-1.json", text: '{"provenance": {"model": "claude-opus-5"}}' }]);
+  const ix = useIndex([{ file: ".snapshots/run-1.json", text: '{"provenance": {"model": "claude-opus-5"}}' }]);
   assert.deepEqual(ix.models.models, []);
   assert.deepEqual(ix.models.mentioned, ["claude-opus-5"]);
 });
@@ -116,11 +116,11 @@ test("aliases count only in used text, and only values that look like a model or
 test("lookup: a term in used text is found; a term only in mentions is 'mentioned' (LNC 7, LCW 6)", () => {
   const ix = useIndex([
     { file: "docs/design.md", text: "Uses the claude-api skill and ClaudeSDKClient." },
-    { file: "data/retro/label.html", text: "<td>claude-agent-sdk</td>" },
+    { file: "data/archive/list.html", text: "<td>claude-agent-sdk</td>" },
     { file: "src/a.ts", text: 'import Anthropic from "@anthropic-ai/sdk";\n// ClaudeSDKClient later' },
   ]);
   assert.deepEqual(lookup(["@anthropic-ai/sdk", "claude-api", "claude-agent-sdk", "ClaudeSDKClient", "nowhere"], ix), {
     found: [{ term: "@anthropic-ai/sdk", file: "src/a.ts" }],
-    mentioned: [{ term: "claude-api", file: "docs/design.md" }, { term: "claude-agent-sdk", file: "data/retro/label.html" }, { term: "ClaudeSDKClient", file: "docs/design.md" }],
+    mentioned: [{ term: "claude-api", file: "docs/design.md" }, { term: "claude-agent-sdk", file: "data/archive/list.html" }, { term: "ClaudeSDKClient", file: "docs/design.md" }],
   });
 });
