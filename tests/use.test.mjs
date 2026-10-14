@@ -13,7 +13,7 @@ test("fileUse: a closed list of config files and code files are 'used'; everythi
     ".snapshots/a.json", "db/schema.sql", "notes.txt", "docker-compose.yml", ".github/dependabot.yml", "style.css",
     "tests/a.mjs", "test/b.py", "src/a.test.ts", "src/b.spec.js", "src/__tests__/c.ts", "fixtures/f.ts", "src/__fixtures__/g.ts",
     "proofs/p.mjs", "logs/run.mjs", "app/test_x.py", "app/x_test.py",
-    "src/render_proof.ts", "src/proof.ts", "src/proof_sweep.ts", "src/step-proof-run.ts", "src/api_smoke.ts", "src/smoke.mjs"])
+    "src/render_proof.ts", "src/proof.ts", "src/proof_batch.ts", "src/step-proof-run.ts", "src/api_smoke.ts", "src/smoke.mjs"])
     assert.equal(fileUse(f), "mentioned", f);
   for (const f of ["src/waterproof.ts", "src/smokescreen.ts", "src/proofreader.py"]) assert.equal(fileUse(f), "used", `${f}: a word that only contains proof or smoke`);
   for (const f of [".claude/agents/a.md", ".claude/commands/c.md", ".claude/lenses/l.md", ".claude/skills/s/SKILL.md", ".claude/agents/sub/b.md"])
@@ -167,7 +167,7 @@ test("another tool's flag is not a claude flag (P-26)", () => {
 test("'claude' that is not a call does not count: paths, names, prose, comments", () => {
   const ix = useIndex([{ file: "src/a.ts", text: [
     'const dir = join(home, ".claude");',
-    'const repo = "claude-watch";',
+    'const repo = "claude-tools";',
     'log("Claude said --verbose things");',
     '// spawn("claude", ["--verbose"])',
   ].join("\n") }]);

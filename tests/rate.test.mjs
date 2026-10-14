@@ -355,19 +355,19 @@ test("mentioned only: no confirmation, no not-found cap", () => {
 });
 
 test("rateRow carries the note and the new caps through to each project's rating", () => {
-  const r = { ...launch, projects: ["setup", "new-compass"] };
-  const models = { setup: { models: ["claude-opus-5-5"], partial: false }, "new-compass": { models: ["claude-opus-4-8"], partial: false } };
-  const evs = [{ project: "setup", ...foundOpus[0], project: "setup" }, { ...missOpus[0], project: "new-compass" }];
-  const orch = { id: "x:1", ratings: [{ project: "setup", score: 9, do: "read", why: "w" }, { project: "new-compass", score: 9, do: "model-refresh", why: "w" }] };
+  const r = { ...launch, projects: ["setup", "app2"] };
+  const models = { setup: { models: ["claude-opus-5-5"], partial: false }, "app2": { models: ["claude-opus-4-8"], partial: false } };
+  const evs = [{ project: "setup", ...foundOpus[0], project: "setup" }, { ...missOpus[0], project: "app2" }];
+  const orch = { id: "x:1", ratings: [{ project: "setup", score: 9, do: "read", why: "w" }, { project: "app2", score: 9, do: "model-refresh", why: "w" }] };
   const out = rateRow(r, evs, orch, models);
-  const s = out.ratings.find((x) => x.project === "setup"), n = out.ratings.find((x) => x.project === "new-compass");
+  const s = out.ratings.find((x) => x.project === "setup"), n = out.ratings.find((x) => x.project === "app2");
   assert.equal(s.score, 5);
   assert.equal(s.evidence, "adopted");
   assert.match(s.note, /already uses/);
   assert.equal(n.score, 9);
   assert.equal(n.evidence, "upgrade");
-  assert.equal(out.ratingProject, "new-compass", "the upgrade candidate now leads, not the project that already moved");
-  const p = ratePayload(r, evs, models).projects.find((x) => x.id === "new-compass");
+  assert.equal(out.ratingProject, "app2", "the upgrade candidate now leads, not the project that already moved");
+  const p = ratePayload(r, evs, models).projects.find((x) => x.id === "app2");
   assert.equal(p.evidence, "upgrade");
   assert.match(p.note, /claude-opus-4-8/);
 });
@@ -416,7 +416,7 @@ test("B-40: a skill or default change is 'read' at most, later band, for an app 
 });
 
 // Gabriel, 2026-10-13: a skill's default never moves an alias, so skill commits cap alias users too
-// (admitkit's lens front matter aliases had kept the claude-api skill item an 8.5 upgrade).
+// (an app whose lens front matter used aliases had kept the claude-api skill item an 8.5 upgrade).
 test("B-40: a skill commit caps alias users too; a Claude Code default-model change does not (LCW 2)", () => {
   const aliased = withAliases(["claude-sonnet-4-6"], [sonnetAlias]);
   assert.ok(bounds(skillDefault, "app", [], aliased).hi <= BANDS.later[1], "a skill commit");

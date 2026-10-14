@@ -39,7 +39,7 @@ export function splitUse(file, text) {
 
 // A call to the claude CLI (B-61): a shell word before a flag ("claude -p ..."), a command setting
 // (cmd: "claude"), or "claude" quoted on a line that starts a process. A quoted "claude" alone is
-// usually a value (a provider id, a runtime name), not a call. Not ".claude", "claude-watch", "Claude".
+// usually a value (a provider id, a runtime name), not a call. Not ".claude", "claude-tools", "Claude".
 const SHELL_CALL = /(?:^|[\s;&|("'`])claude(?:\.exe|\.cmd)?\s+-/;
 const COMMAND_KEY = /\b(?:cmd|command|bin|binary|executable)["'`]?\s*[:=]\s*["'`]claude(?:\.exe|\.cmd)?["'`]/;
 const QUOTED = /["'`]claude(?:\.exe|\.cmd)?["'`]/;
