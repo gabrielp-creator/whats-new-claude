@@ -415,9 +415,17 @@ test("B-40: a skill or default change is 'read' at most, later band, for an app 
   }
 });
 
-test("B-40: setup, alias users, tripwire items and other Claude Code items keep their band", () => {
+// Gabriel, 2026-10-13: a skill's default never moves an alias, so skill commits cap alias users too
+// (admitkit's lens front matter aliases had kept the claude-api skill item an 8.5 upgrade).
+test("B-40: a skill commit caps alias users too; a Claude Code default-model change does not (LCW 2)", () => {
+  const aliased = withAliases(["claude-sonnet-4-6"], [sonnetAlias]);
+  assert.ok(bounds(skillDefault, "app", [], aliased).hi <= BANDS.later[1], "a skill commit");
+  const ccDefault = row({ source: "claude-code", type: "behavior-change", risk: "behavior-change", text: "Changed the default model on Pro plans from Sonnet to Opus" });
+  assert.ok(bounds(ccDefault, "app", [], aliased).hi > BANDS.later[1], "a default change can move what an alias runs");
+});
+
+test("B-40: setup, tripwire items and other Claude Code items keep their band", () => {
   assert.ok(bounds(skillDefault, "setup", [], appOnly).hi > BANDS.later[1], "setup");
-  assert.ok(bounds(skillDefault, "app", [], withAliases([], [sonnetAlias])).hi > BANDS.later[1], "an alias user");
   assert.ok(bounds({ ...skillDefault, type: "security", risk: "security" }, "app", [], appOnly).hi > BANDS.later[1], "a security item (P-4)");
   assert.ok(bounds(row({ source: "claude-code", type: "bug-fix", risk: "none", text: "Fixed a crash on startup" }), "app", [], appOnly).hi > BANDS.later[1]);
 });

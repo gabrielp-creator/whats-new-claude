@@ -100,9 +100,10 @@ export function bounds(row, project, evs, models) {
     note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
   }
   // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
-  // project gets "read" at most, in the later band. Tripwire items keep their band (P-4).
+  // project gets "read" at most, in the later band. A skill's default never moves an alias, so skill
+  // commits cap alias users too (Gabriel, 2026-10-13). Tripwire items keep their band (P-4).
   let readOnly = false;
-  if (project && project !== "setup" && !aliases.length && isSkillOrDefault(row) && !isTripwire(row)) {
+  if (project && project !== "setup" && (row.source === "skills" || !aliases.length) && isSkillOrDefault(row) && !isTripwire(row)) {
     readOnly = true; hi = Math.min(hi, BANDS.later[1]);
     const line = "a skill or default change: it shapes code Claude writes from now on, not your existing calls";
     note = note ? `${note}; ${line}` : line;
