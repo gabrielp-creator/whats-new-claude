@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { dataDir, positional, readJsonl, readJson, writeJsonl, writeJson } from "./lib/store.mjs";
 import { sinceFor, mergeItems, recordSource, heartbeatWarnings, clampDate } from "./lib/incremental.mjs";
-import { pluginProvenance, commitProvenance } from "./lib/provenance.mjs";
+import { pluginItems, commitProvenance } from "./lib/provenance.mjs";
 import { safeUrl } from "./lib/brief.mjs";
 import { get, errLine } from "./lib/net.mjs";
 import { refreshDeprecations } from "./lib/deprecations.mjs";
@@ -93,12 +93,7 @@ async function pluginMarketplace(since) {
     return JSON.parse(Buffer.from(f.content, "base64").toString("utf8")).plugins;
   };
   const before = new Set((old ? await load(old.sha) : []).map((p) => p.name));
-  const today = new Date().toISOString().slice(0, 10);
-  return (await load()).filter((p) => !before.has(p.name)).map((p) => ({
-    id: `plugins:${p.name}`, source: "plugins", date: today, title: `New plugin: ${p.name}`,
-    text: String(p.description || "").slice(0, 400), url: `https://github.com/${repo}`,
-    provenance: pluginProvenance(p.source),
-  }));
+  return pluginItems(await load(), before, { repo, today: new Date().toISOString().slice(0, 10) });
 }
 
 async function githubCommits(repo, source, since) {
