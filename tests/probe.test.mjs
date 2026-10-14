@@ -44,6 +44,18 @@ test("not found is a note, never a downgrade: absence is unknown, not none", () 
   }
 });
 
+test("a name only mentioned (docs, data, comments) is 'mentioned': no +2, and not 'not-found' (B-47)", () => {
+  const r = applyEvidence(row(), [{ project: "app", checked: ["x"], found: [], mentioned: [{ term: "x", file: "docs/d.md" }] }]);
+  assert.equal(r.evidence, "mentioned");
+  assert.equal(r.urgency, 60);
+  assert.deepEqual(r.confirmedIn, []);
+  const mixed = applyEvidence(row({ projects: ["app", "web"] }), [
+    { project: "app", checked: ["x"], found: [], mentioned: [{ term: "x", file: "docs/d.md" }] },
+    { project: "web", checked: ["x"], found: [{ term: "x", file: "src/a.ts" }] }]);
+  assert.equal(mixed.evidence, "confirmed");
+  assert.deepEqual(mixed.confirmedIn, ["web"]);
+});
+
 test("nothing to check, or a project left unchecked, is unchecked", () => {
   assert.equal(applyEvidence(row(), []).evidence, "unchecked");
   assert.equal(applyEvidence(row({ projects: ["app", "web"] }), [{ project: "app", checked: ["x"], found: [] }]).evidence, "unchecked");

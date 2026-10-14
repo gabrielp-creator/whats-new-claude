@@ -41,15 +41,18 @@ export function tokenIndex(files) {
   return idx;
 }
 
-// evs: [{project, checked: [terms], found: [{term, file}]}] for one item. A confirmed item sorts first
-// within its tier (+2 never crosses a tier boundary: see the bases in merge.mjs). Not found is only a
-// note: commands people type never appear in files, and absence of evidence is unknown, not none.
+// evs: [{project, checked: [terms], found: [{term, file}], mentioned: [{term, file}]}] for one item.
+// found: in config or code; mentioned: only in docs, data or comments (use.mjs, B-47). A confirmed
+// item sorts first within its tier (+2 never crosses a tier boundary: see the bases in merge.mjs). Not
+// found is only a note: commands people type never appear in files, and absence of evidence is
+// unknown, not none. A mention is context, neither a confirmation nor a "not found".
 export function applyEvidence(row, evs) {
   const found = evs.filter((e) => e.found.length);
   if (found.length) {
     const urgency = row.urgency + 2;
     return { ...row, evidence: "confirmed", confirmedIn: found.map((e) => e.project), urgency, urgencyLabel: labelFor(urgency) };
   }
+  if (evs.some((e) => e.mentioned?.length)) return { ...row, evidence: "mentioned", confirmedIn: [] };
   const checked = new Set(evs.filter((e) => e.checked.length).map((e) => e.project));
   const all = row.projects.length > 0 && row.projects.every((p) => checked.has(p));
   return { ...row, evidence: all ? "not-found" : "unchecked", confirmedIn: [] };

@@ -157,9 +157,17 @@ test("ratePayload gives the orchestrator each project's range and evidence names
   const r = row({ title: "T", text: "body", source: "claude-code", provenance: "anthropic-release", effect: "fixes", why: "w",
     type: "model", action: "model-refresh", risk: "deprecation", riskExposed: true, riskWhy: "rw" });
   const p = ratePayload(r, [ev({ checked: ["claude-opus-4-1"], found: [{ term: "claude-opus-4-1", file: "src/a.ts", text: "SECRET CONTENT" }] })]);
-  assert.deepEqual(p.projects, [{ id: "app", range: [7, 10], evidence: "confirmed", note: "", found: ["claude-opus-4-1 in src/a.ts"] }]);
+  assert.deepEqual(p.projects, [{ id: "app", range: [7, 10], evidence: "confirmed", note: "", found: ["claude-opus-4-1 in src/a.ts"], mentioned: [] }]);
   assert.equal(p.lenses.type, "model");
   assert.doesNotMatch(JSON.stringify(p), /SECRET CONTENT/);
+});
+
+test("ratePayload carries mentions as context, apart from what was found (B-47)", () => {
+  const p = ratePayload(row({ urgencyLabel: "soon" }), [ev({ checked: ["claude-api"], found: [], mentioned: [{ term: "claude-api", file: "docs/d.md", text: "SECRET" }] })]);
+  assert.deepEqual(p.projects[0].found, []);
+  assert.deepEqual(p.projects[0].mentioned, ["claude-api in docs/d.md"]);
+  assert.equal(p.projects[0].evidence, "mentioned");
+  assert.doesNotMatch(JSON.stringify(p), /SECRET/);
 });
 
 test("an urgent item tied to no project is never 'provisional': no orchestrator call is planned for it", () => {
@@ -210,10 +218,11 @@ test("launch for a project on another family only: capped at 7.9 (same family on
   assert.match(b.note, /claude-sonnet-4-6/);
 });
 
-test("launch for a project with no model ids: today's not-found cap", () => {
+test("launch for a project with no model id and no alias: unknown, never capped (B-39: absence is unknown)", () => {
   const b = bounds(launch, "app", missOpus, inv([]));
-  assert.equal(b.evidence, "not-found");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.evidence, "unknown");
+  assert.equal(b.hi, 10);
+  assert.match(b.note, /no model id or alias found/);
 });
 
 test("partly searched project: a found model still counts, an absent one is 'file check incomplete', never capped", () => {
@@ -256,6 +265,64 @@ test("B-33: the band stays open when the project uses one of the named models, o
   assert.equal(bounds(sonnetBreak, "app", confirmedOther, inv(["claude-sonnet-4-6"])).evidence, "confirmed", "a confirmed name keeps the band open");
 });
 
+// B-39: aliases are recorded, never resolved (P-14). An alias user is exposed to launches and
+// retirements in the alias's family, at soon, and is asked to confirm which model the alias runs.
+const withAliases = (models, aliases) => ({ app: { models, aliases, partial: false } });
+const sonnetAlias = { alias: "sonnet", family: "sonnet", file: "scripts/run.mjs", line: 14 };
+const sonnetLaunch = row({ type: "model", risk: "behavior-change", urgencyLabel: "later", text: "Added Claude Sonnet 5.5 (`claude-sonnet-5-5`), now the default Sonnet model" });
+const haikuLaunch = row({ type: "model", risk: "none", text: "We've launched Claude Haiku 5.5 (claude-haiku-5-5)" });
+
+test("an alias user and a launch in the alias's family: soon band, 'confirm which model', with file:line (P-14, LCW 2)", () => {
+  for (const label of ["urgent", "soon", "later", "none"]) {
+    const b = bounds({ ...sonnetLaunch, urgencyLabel: label }, "app", [], withAliases([], [sonnetAlias]));
+    assert.equal(b.evidence, "alias", label);
+    assert.deepEqual([b.lo, b.hi], BANDS.soon, label);
+    assert.match(b.note, /your `sonnet` alias may have moved: confirm which model it runs \(scripts\/run\.mjs:14\)/);
+  }
+  const lens = { alias: "sonnet", family: "sonnet", file: ".claude/lenses/l.md", line: 3 };
+  assert.match(bounds(sonnetLaunch, "app", [], withAliases([], [lens, sonnetAlias])).note, /\(scripts\/run\.mjs:14\)/, "a code file is cited before front matter");
+  assert.match(bounds(sonnetLaunch, "app", [], withAliases([], [lens])).note, /\(\.claude\/lenses\/l\.md:3\)/);
+});
+
+test("an alias of another family only: other-models, not upgrade and not unknown (LCW 1)", () => {
+  const b = bounds(haikuLaunch, "app", [], withAliases([], [sonnetAlias]));
+  assert.equal(b.evidence, "other-models");
+  assert.match(b.note, /`sonnet` alias/);
+});
+
+test("a pinned id of the launched family decides before an alias does", () => {
+  const b = bounds(sonnetLaunch, "app", [], withAliases(["claude-sonnet-4-6"], [sonnetAlias]));
+  assert.equal(b.evidence, "upgrade");
+  const inherit = bounds(sonnetLaunch, "app", [], withAliases([], [{ alias: "inherit", family: null, file: ".claude/agents/a.md", line: 2 }]));
+  assert.equal(inherit.evidence, "unknown", "inherit names no family");
+});
+
+test("a retirement in an alias's family: alias, soon (P-14)", () => {
+  const retire = row({ type: "breaking-or-deprecation", risk: "deprecation", text: "Claude Sonnet 4.5 (`claude-sonnet-4-5`) retires on 2026-11-01" });
+  const b = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [] })], withAliases([], [sonnetAlias]));
+  assert.equal(b.evidence, "alias");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  const pinned = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [{ term: "claude-sonnet-4-5", file: "a.ts" }] })], withAliases(["claude-sonnet-4-5"], [sonnetAlias]));
+  assert.equal(pinned.evidence, "confirmed", "a pinned retiring id is still confirmed");
+});
+
+test("B-33's other-models cap never applies when an alias of a named family is in use", () => {
+  assert.equal(bounds(sonnetBreak, "app", [], withAliases(["claude-haiku-4-5"], [])).evidence, "other-models", "control: without the alias it is capped");
+  const b = bounds(sonnetBreak, "app", [], withAliases(["claude-haiku-4-5"], [sonnetAlias]));
+  assert.notEqual(b.evidence, "other-models");
+  assert.equal(b.hi, 10);
+});
+
+// B-47: a name found only in docs, data records, tests or comments is "mentioned": context, not a
+// confirmation and not a "not found".
+test("mentioned only: no confirmation, no not-found cap", () => {
+  const b = bounds(row({ urgencyLabel: "soon" }), "app", [ev({ checked: ["claude-api"], found: [], mentioned: [{ term: "claude-api", file: "docs/d.md" }] })]);
+  assert.equal(b.evidence, "mentioned");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.deepEqual(b.foundIn, []);
+  assert.match(b.note, /named only in docs, data or comments: claude-api in docs\/d\.md/);
+});
+
 test("rateRow carries the note and the new caps through to each project's rating", () => {
   const r = { ...launch, projects: ["setup", "new-compass"] };
   const models = { setup: { models: ["claude-opus-5-5"], partial: false }, "new-compass": { models: ["claude-opus-4-8"], partial: false } };
@@ -294,7 +361,7 @@ test("staleRating for answers stored before 0.3.0 (no seen): stale only where th
   const r = { ...launch, projects: ["app"] };
   const legacy = { id: "x:1", ratings: [{ project: "app", score: 9 }] };
   assert.equal(staleRating(r, legacy, foundOpus, inv(["claude-opus-5-5"])), true, "adopted: 7 to 10 became 5");
-  assert.equal(staleRating(r, legacy, missOpus, inv([])), false, "no model ids: same not-found range as before");
+  assert.equal(staleRating(r, legacy, missOpus, inv([])), true, "no model id or alias: unknown, no longer the not-found cap (B-39)");
   const retire = { ...row({ type: "breaking-or-deprecation", risk: "deprecation", text: "`claude-sonnet-4-5` retires" }), projects: ["app"] };
   assert.equal(staleRating(retire, legacy, [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"])), false, "retirements are unchanged");
 });

@@ -3,7 +3,7 @@
 // Fetched text can move an item within its band, never out of it. Tested in tests/rate.test.mjs.
 
 import { injectionFlag } from "./batch.mjs";
-import { modelRefs, launchStatus, scopeOverlap } from "./models.mjs";
+import { parseModel, modelRefs, launchStatus, scopeOverlap } from "./models.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
@@ -29,22 +29,39 @@ export const termKind = (t) => (/^[-/]/.test(t) ? "typed" : "file");
 const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
 const list = (ids) => ids.slice(0, 3).join(", ") + (ids.length > 3 ? ` +${ids.length - 3}` : "");
 
-// evs: verify.mjs evidence rows for this item ({project, checked, found}). checked is [] when the
-// project was only partly searched and nothing matched, so a partial search can never cap.
-// models: verify.mjs models.json ({[project]: {models: [ids], partial}}), or undefined before a run.
-// note: one line of code-made text (model ids only) saying why the band is what it is.
+// evs: verify.mjs evidence rows for this item ({project, checked, found, mentioned}). checked is []
+// when the project was only partly searched and nothing matched, so a partial search can never cap.
+// mentioned: names seen only in docs, data or comments (B-47): context, never a confirmation.
+// models: verify.mjs models.json ({[project]: {models: [ids], aliases: [{alias, family, file, line}],
+// partial}}), or undefined before a run.
+// note: one line of code-made text (model ids, aliases, file names) saying why the band is what it is.
 export function bounds(row, project, evs, models) {
   let [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none;
   const e = project ? evs.find((x) => x.project === project) : null;
   const inv = project ? models?.[project] : null;
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
+  const mentionedIn = e?.mentioned || [];
   let evidence = "unchecked", foundIn = [], note = "";
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
+  else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
   else if (e?.checked?.some((t) => termKind(t) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
   else if (inv?.partial) { evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit"; }
 
-  if (isLaunch(row) && refs.length && uses.length) {
+  // Aliases are never resolved (B-39, P-14): an alias in a family the item names, with no pinned id
+  // of that family, may run any of its models, so the project is asked to confirm, at soon.
+  const families = new Set(refs.map((r) => r.family));
+  const pinned = new Set(uses.map(parseModel).filter(Boolean).map((m) => m.family));
+  const aliases = (inv?.aliases || []).filter((a) => a.family);
+  const inFamily = aliases.filter((a) => families.has(a.family) && !pinned.has(a.family));
+  const exposed = inFamily.find((a) => !/\.md$/i.test(a.file)) || inFamily[0]; // cite code before front matter
+  const asAlias = () => {
+    [lo, hi] = BANDS.soon; evidence = "alias";
+    note = `your \`${exposed.alias}\` alias may have moved: confirm which model it runs (${exposed.file}:${exposed.line})`;
+  };
+  const known = [...uses, ...new Set(aliases.map((a) => `the \`${a.alias}\` alias`))];
+
+  if (isLaunch(row) && refs.length && inv) {
     const l = launchStatus(refs, uses);
     [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none; // decided here, not by the generic check above
     if (l.status === "adopted") {
@@ -52,18 +69,25 @@ export function bounds(row, project, evs, models) {
       note = `already uses ${list(l.uses)}${l.older.length ? ` (also ${list(l.older)})` : ""}: confirm settings and pricing`;
     } else if (l.status === "upgrade") {
       evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`;
+    } else if (exposed) {
+      asAlias();
     } else if (inv.partial) {
       evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit";
+    } else if (known.length) {
+      evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP); note = `this project uses ${list(known)}`;
     } else {
-      evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP); note = `this project uses ${list(uses)}`;
+      // No pinned id and no alias: which model it runs is unknown, never "other models" (B-39).
+      evidence = "unknown"; note = "no model id or alias found in this project's code or config";
     }
-  } else if (!isLaunch(row) && refs.length && uses.length && evidence === "unchecked" && !scopeOverlap(refs, uses).length) {
+  } else if (row.risk === "deprecation" && exposed && evidence !== "confirmed") {
+    asAlias();
+  } else if (!isLaunch(row) && refs.length && uses.length && evidence === "unchecked" && !aliases.some((a) => families.has(a.family)) && !scopeOverlap(refs, uses).length) {
     // A change scoped to models the project does not use matters when it moves to one of them (B-33).
     evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
     note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
   }
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, note };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -125,7 +149,8 @@ export function ratePayload(row, evs, models) {
       risk: row.risk, exposed: row.riskExposed, riskWhy: row.riskWhy },
     projects: row.projects.map((id) => {
       const b = bounds(row, id, evs, models);
-      return { id, range: [b.lo, b.hi], evidence: b.evidence, note: b.note, found: b.foundIn.map((f) => `${f.term} in ${f.file}`) };
+      return { id, range: [b.lo, b.hi], evidence: b.evidence, note: b.note, found: b.foundIn.map((f) => `${f.term} in ${f.file}`),
+        mentioned: b.mentionedIn.map((f) => `${f.term} in ${f.file}`) };
     }),
   };
 }

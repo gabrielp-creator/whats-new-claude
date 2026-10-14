@@ -35,8 +35,54 @@ export function parseModel(id) {
 // The models a release item names, by id or by name, in the order they appear.
 export const modelRefs = (text) => dedupe(matches(text, true));
 
-// The model ids a project's files use (ids only: prose in a project's docs proves little).
-export const inventory = (files) => dedupe(files.flatMap((f) => matches(f.text, false))).map((m) => m.id);
+// Aliases pick a model without pinning one (B-39). They are recorded, never resolved: which model an
+// alias runs moves with releases, and only the user can say (Gabriel, 2026-10-13, P-14).
+const ALIASES = new Set(["sonnet", "opus", "haiku", "fable", "inherit"]);
+const LATEST = new RegExp(`\\bclaude-(?:\\d(?:-\\d)?-)?(?:${FAMILIES})(?:-\\d{1,2}){0,2}-latest\\b`, "gi");
+const LATEST_ONE = new RegExp(`^claude-(?:\\d(?:-\\d)?-)?(${FAMILIES})(?:-\\d{1,2}){0,2}-latest$`, "i");
+// model: sonnet, "model": "opus", MODEL = "haiku", ANTHROPIC_MODEL=fable, model="claude-sonnet-4-latest"
+const MODEL_KEY = /(?:^|[^A-Za-z])model["'`]?\s*[:=]\s*["'`]?([\w.:-]+)/gi;
+// --model sonnet, --model=opus, "--model", "haiku", "--model", MODEL (a variable: its default is read)
+const MODEL_FLAG = /--model["'`]?(?:\s*,\s*|=|\s+)["'`]?([\w$.:-]+)/g;
+
+function aliasOf(value) {
+  const s = String(value).toLowerCase();
+  if (ALIASES.has(s)) return { alias: s, family: s === "inherit" ? null : s };
+  const m = s.match(LATEST_ONE);
+  return m ? { alias: s, family: m[1].toLowerCase() } : null;
+}
+
+// The alias values assigned to a variable in the same file: MODEL = "sonnet", model="opus".
+function defaults(lines, name) {
+  const re = new RegExp(`(?:^|[^\\w$.])${name.replace(/\$/g, "\\$")}\\s*[:=]\\s*["'\`]([\\w.:-]+)["'\`]`);
+  return lines.flatMap(({ line, text }) => { const a = aliasOf(text.match(re)?.[1] || ""); return a ? [{ a, line }] : []; });
+}
+
+// The models a project's files use, from use.mjs's split ([{file, used: [{line, text}], mentioned}]):
+// pinned ids and aliases from used lines only, each with the file and line it was first seen at;
+// ids seen only in mentions (docs, data, comments) are listed apart and never count as use (B-47).
+// models: the pinned ids alone, the shape rate.mjs reads.
+export function modelUse(files) {
+  const used = [], aliases = [], mentioned = [], seen = new Set(), seenAlias = new Set();
+  const ids = (text) => matches(text.replace(LATEST, (s) => " ".repeat(s.length)), false);
+  for (const f of files) {
+    const here = [];
+    const add = (a, line) => { const k = `${a.alias}|${f.file}|${line}`; if (!seenAlias.has(k)) { seenAlias.add(k); here.push({ ...a, file: f.file, line }); } };
+    for (const { line, text } of f.used) {
+      for (const m of text.matchAll(LATEST)) add(aliasOf(m[0]), line);
+      for (const m of text.matchAll(MODEL_KEY)) { const a = aliasOf(m[1]); if (a) add(a, line); }
+      for (const m of text.matchAll(MODEL_FLAG)) {
+        const a = aliasOf(m[1]);
+        if (a) add(a, line);
+        else if (/^[A-Za-z_$][\w$]*$/.test(m[1])) for (const d of defaults(f.used, m[1])) add(d.a, d.line);
+      }
+      for (const m of ids(text)) if (!seen.has(m.id)) { seen.add(m.id); used.push({ id: m.id, file: f.file, line }); }
+    }
+    aliases.push(...here.sort((a, b) => a.line - b.line));
+  }
+  for (const f of files) for (const { text } of f.mentioned) for (const m of ids(text)) if (!seen.has(m.id) && !mentioned.includes(m.id)) mentioned.push(m.id);
+  return { models: used.map((u) => u.id), used, aliases, mentioned };
+}
 
 const parsed = (ids) => dedupe(ids.map(parseModel).filter(Boolean));
 

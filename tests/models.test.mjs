@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseModel, modelRefs, inventory, launchStatus, scopeOverlap } from "../scripts/lib/models.mjs";
+import { parseModel, modelRefs, launchStatus, scopeOverlap } from "../scripts/lib/models.mjs";
 
 test("parseModel reads current, dated, cloud and old-style ids into family and version", () => {
   assert.deepEqual(parseModel("claude-opus-5-5"), { family: "opus", version: [5, 5], id: "claude-opus-5-5" });
@@ -21,14 +21,6 @@ test("modelRefs finds ids and prose names in release text, deduplicated", () => 
   assert.deepEqual(modelRefs("On Claude Fable 5.1 and Claude Mythos 5.1, tool_choice").map((m) => m.id), ["claude-fable-5-1", "claude-mythos-5-1"]);
   assert.deepEqual(modelRefs("Sonnet 4.5 retires on 2026-11-01").map((m) => m.id), ["claude-sonnet-4-5"]);
   assert.deepEqual(modelRefs("an opus 5 poem, Haiku about spring, version 2.1.280"), [], "lowercase words and bare family names are not model names");
-});
-
-test("inventory lists the model ids a project's files use, by first file, without duplicates", () => {
-  const inv = inventory([
-    { file: "src/a.ts", text: 'model: "claude-opus-4-8", fallback: "claude-opus-4-8"' },
-    { file: "src/b.py", text: "MODEL = 'claude-sonnet-4-5-20250929'  # anthropic.claude-opus-5-5-v1:0" },
-  ]);
-  assert.deepEqual(inv, ["claude-opus-4-8", "claude-sonnet-4-5", "claude-opus-5-5"]);
 });
 
 const opus55 = modelRefs("Added Claude Opus 5.5 (`claude-opus-5-5`)");

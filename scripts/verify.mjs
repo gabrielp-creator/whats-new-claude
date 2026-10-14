@@ -2,8 +2,9 @@
 // "Check before flagging": for every item the lenses tied to a project, look up the concrete names
 // in it (settings keys, model ids, packages, env vars, slash commands) in that project's own files.
 // Read-only and local: file contents never leave this process; <data>/evidence.jsonl keeps only the
-// matched name and the relative file path. The "setup" project is looked up in ~/.claude (config
-// files only, never transcripts). Regenerated in full on each run.
+// matched name and the relative file path. A name counts as found only in config or code; in docs,
+// data, tests or comments it is only "mentioned" (lib/use.mjs, B-47). The "setup" project is looked
+// up in ~/.claude (config files only, never transcripts). Regenerated in full on each run.
 // Usage: node verify.mjs [--data <dir>]
 import { readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -11,10 +12,10 @@ import { homedir } from "node:os";
 import { dataDir, writeJsonl, writeJson } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
-import { extractTerms, tokenIndex } from "./lib/probe.mjs";
+import { extractTerms } from "./lib/probe.mjs";
 import { safeBriefDir } from "./lib/paths.mjs";
 import { collect as walk } from "./lib/walk.mjs";
-import { inventory } from "./lib/models.mjs";
+import { useIndex, lookup } from "./lib/use.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -29,39 +30,42 @@ function projectFiles(p) {
     const home = join(homedir(), ".claude");
     let skillFiles = [];
     try { skillFiles = readdirSync(join(home, "skills"), { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => `skills/${d.name}/SKILL.md`); } catch {}
-    return collect(home, ["settings.json", "CLAUDE.md", "keybindings.json", "rules", "agents", "commands", "hooks", ...skillFiles]);
+    return collect(home, ["settings.json", "CLAUDE.md", "keybindings.json", "rules", "agents", "commands", "lenses", "hooks", ...skillFiles]);
   }
   if (!p.path) return null; // no folder configured: cannot check
   return collect(safeBriefDir(config.workspaceRoot, p.path, config.blocked.filter((b) => b !== ".claude"), { write: false }));
 }
 
 // A project that hits the file cap was only partly searched: it can confirm, never report "not found".
-// models.json: the Claude model ids each project's files use, for rating launches and model-scoped changes.
+// models.json: the Claude models each project's config and code use (pinned ids and aliases, with file
+// and line) and the ids only mentioned, for rating launches and model-scoped changes.
 const indexes = new Map(), partial = new Set(), models = {};
 for (const p of config.projects) {
   const files = projectFiles(p);
-  if (files) indexes.set(p.id, tokenIndex(files));
+  const ix = files && useIndex(files, { claudeRoot: p.id === "setup" && !p.path });
+  if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
-  if (files) models[p.id] = { models: inventory(files), partial: Boolean(files.capped) };
+  if (ix) models[p.id] = { ...ix.models, partial: Boolean(files.capped) };
   console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}` : "no folder configured, not checked"}`);
 }
 
 const out = [];
-let confirmed = 0, notFound = 0;
+let confirmed = 0, mentioned = 0, notFound = 0;
 for (const r of loadRows(DATA, { evidence: false }).rows) {
   if (r.effect === "none" && !r.riskExposed) continue;
   const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
   if (!terms.length) continue;
-  let any = false;
+  let any = false, named = false;
   for (const proj of r.projects) {
-    const idx = indexes.get(proj);
-    if (!idx) continue;
-    const found = terms.filter((t) => idx.has(t)).map((t) => ({ term: t, file: idx.get(t) }));
+    const ix = indexes.get(proj);
+    if (!ix) continue;
+    const { found, mentioned: only } = lookup(terms, ix);
     if (found.length) any = true;
-    out.push({ id: r.id, project: proj, checked: found.length || !partial.has(proj) ? terms : [], found });
+    if (only.length) named = true;
+    out.push({ id: r.id, project: proj, checked: found.length || !partial.has(proj) ? terms : [], found, mentioned: only });
   }
-  if (any) confirmed++; else if (r.projects.some((p) => indexes.has(p))) notFound++;
+  if (any) confirmed++; else if (named) mentioned++; else if (r.projects.some((p) => indexes.has(p))) notFound++;
 }
 writeJsonl(join(DATA, "evidence.jsonl"), out);
 writeJson(join(DATA, "models.json"), models);
-console.log(`evidence: ${confirmed} item(s) confirmed in your files, ${notFound} checked and not found`);
+console.log(`evidence: ${confirmed} item(s) confirmed in your config or code, ${mentioned} only mentioned (docs, data, comments), ${notFound} checked and not found`);

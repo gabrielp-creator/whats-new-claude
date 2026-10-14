@@ -19,6 +19,19 @@
   checkouts as the project's own files, so a copy on another branch could confirm an item or add a
   model id. It now skips `.claude/worktrees` and any subfolder holding a `.git` file (a worktree or
   submodule); a project folder that is itself a worktree is still read.
+- The file check tells use from mention. A name counts as used only in code files and a closed list of
+  config files (`package.json`, `settings*.json`, `*.toml`, GitHub workflow files, and the `model:`
+  line of `.claude` agent, command, lens and skill front matter). Docs, HTML, other JSON, SQL, tests,
+  fixtures, proofs, smoke checks, logs and full-line comments only mention it: a mention is shown to
+  the rater as context but never confirms an item and never counts as "not found". Before, any text
+  file confirmed, so stored release notes and review records could confirm every item and add model
+  ids a project never runs. `models.json` now records each model id with its file and line, the ids
+  only mentioned, and model aliases (`sonnet`, `opus`, `haiku`, `fable`, `inherit`, `*-latest`, from
+  front matter, `--model`, `ANTHROPIC_MODEL` or a `model` setting). Aliases are recorded, never
+  resolved: a launch or retirement in an alias's family is rated in the soon band with "your `sonnet`
+  alias may have moved: confirm which model it runs", and the file and line. A launch for a project
+  with no model id and no alias is "model not known", no longer capped as "not found". The setup
+  check also reads `~/.claude/lenses`.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
