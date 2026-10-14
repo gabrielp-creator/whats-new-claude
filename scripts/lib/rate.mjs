@@ -12,7 +12,7 @@ export const NOT_FOUND_CAP = 7.9; // keeps an item that names files we could not
 export const ADOPTED_CAP = 5;     // a launch the project already uses: still listed, never a top pick (Gabriel, 2026-10-09)
 export const NOT_USED_TRIPWIRE_CAP = 6.9; // a tripwire item not used here: soon (P-4), out of the 7+ list (RF 3)
 const AGREE = { "breaking-or-deprecation": ["breaking", "deprecation"], security: ["security"] };
-const lensesAgree = (row) => (AGREE[row.type] || []).includes(row.risk);
+export const lensesAgree = (row) => (AGREE[row.type] || []).includes(row.risk);
 export const ACTIONS = new Set(["model-refresh", "claude-md-rule", "try-feature", "update-harness", "update-code", "read", "ignore"]);
 const STRENGTH_AT = { high: 0.75, medium: 0.5, low: 0.25 };
 const WHY_MAX = 160;
@@ -123,7 +123,7 @@ export function bounds(row, project, evs, models) {
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
   const mentionedIn = e?.mentioned || [];
-  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false, fresh = false, due = false;
+  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false, fresh = false, due = false, heldSoon = false;
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
   else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) {
@@ -273,7 +273,7 @@ export function bounds(row, project, evs, models) {
   if (!row.codeMade && !due) {
     if (isLaunch(row) && ["upgrade", "unknown", "incomplete"].includes(evidence)) lower("soon");
     if (evidence === "other-models" || (evidence === "not-found" && !fresh)) {
-      if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); } else lower("later");
+      if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); heldSoon = true; } else lower("later");
     }
     if ((row.urgencyBy === "floor" || row.urgencyBy === "exposed") && !(evidence === "confirmed" && lensesAgree(row))) lower("soon");
   }
@@ -286,7 +286,7 @@ export function bounds(row, project, evs, models) {
   if (row.source === "claude-code" && inv?.claudeCode && tag && !olderThan(inv.claudeCode, tag) && evidence !== "confirmed"
     && !fresh && row.type !== "new-capability" && !isLaunch(row) && !isBreaking(row) && !row.codeMade) {
     installed = inv.claudeCode;
-    if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); } else lower("later");
+    if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); heldSoon = true; } else lower("later");
     note = note ? `${note}; already in your version (${installed})` : `already in your version (${installed})`;
   }
   // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
@@ -301,7 +301,7 @@ export function bounds(row, project, evs, models) {
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
   // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
   if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, ...(installed ? { installed } : {}) };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, heldSoon, ...(installed ? { installed } : {}) };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -333,7 +333,7 @@ export function rateRow(row, evs, orch, models) {
     if (b.readOnly && act !== "ignore") act = "read";
     if (b.priceOnly && act === "model-refresh") act = "read"; // a price or limit change needs no model change (B-57)
     return {
-      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note, ...(b.installed ? { installed: b.installed } : {}),
+      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note, ...(b.installed ? { installed: b.installed } : {}), ...(b.heldSoon ? { heldSoon: true } : {}),
       score: score ?? codeScore(row, b),
       provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade && !b.installed,
       do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)

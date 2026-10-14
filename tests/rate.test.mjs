@@ -828,3 +828,9 @@ test("B-52: a model launch in Claude Code's changelog is a new capability, never
   assert.equal(b.installed, undefined);
   assert.equal(b.evidence, "upgrade");
 });
+
+test("counters: the P-4 floor marks the pairs it holds at soon (heldSoon)", () => {
+  const retire = row({ type: "breaking-or-deprecation", risk: "deprecation", text: "Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) retires on 2026-11-30" });
+  assert.equal(bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5-20250929"], found: [] })], inv(["claude-opus-4-8"])).heldSoon, true);
+  assert.equal(bounds(row({ type: "improvement", risk: "none" }), "app", [ev({ checked: ["fooBarSetting"], found: [] })]).heldSoon, false, "a plain item drops to later, nothing held");
+});

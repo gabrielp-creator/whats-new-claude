@@ -2,6 +2,7 @@
 // link, so no fetched release text can ever reach a session through it. Empty string = say nothing.
 // Tested in tests/reminder.test.mjs.
 import { LOCK_STALE_MS } from "./updater.mjs";
+import { COUNTERS } from "./counters.mjs";
 
 const DAY = 864e5;
 export const STALE_DAYS = 7;
@@ -33,6 +34,9 @@ export function reminderText({ summary, config, project, updater, options }, now
   if (updater?.incomplete || dead) parts.push("The last background update did not finish; run /whats-new to see why.");
   const w = updater?.waiting;
   if (w && Number(w.items) > 0) parts.push(`${Number(w.items)} new items are waiting for /whats-new (about ${Number(w.calls) || 0} Claude calls, over your background budget).`);
+  // Silent-failure counters that jumped since the run before (lib/counters.mjs): code's labels, numbers.
+  const jumped = (summary.counterJumps || []).filter((j) => Object.hasOwn(COUNTERS, j?.key) && Number.isFinite(j.before) && Number.isFinite(j.now));
+  if (jumped.length) parts.push(`Check: ${jumped.map((j) => `${COUNTERS[j.key]} rose from ${j.before} to ${j.now}`).join("; ")}.`);
   const ageDays = Math.floor((now - Date.parse(summary.builtAt)) / DAY);
   if (ageDays >= STALE_DAYS) parts.push(`Last checked ${ageDays} days ago; run /whats-new to refresh.`);
   if (!parts.length) return "";
