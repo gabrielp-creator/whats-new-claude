@@ -2,7 +2,7 @@
 // item to projects from one description line, so it misses projects that run an affected model; code
 // adds them from what their own config and code use (models.json). Code only adds here; nothing a
 // fetched text says can tie a project that the predicate does not. Tested in tests/ties.test.mjs.
-import { modelRefs, launchStatus, isLaunchText } from "./models.mjs";
+import { modelRefs, launchStatus } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
 import { isLaunch, isTripwire } from "./rate.mjs";
 
@@ -16,11 +16,11 @@ export const API = new Set(["platform-release-notes", "anthropic-news"]);
 // B-48: [{project, tiedBy: "model", ids}] for projects the item does not already name. A launch ties
 // projects that use the launched model or an older one of its family (adopted or upgrade); any other
 // item ties projects with a used id inside its scope ("in" only: "unknown" never ties, P-13). A launch
-// needs the type lens's "model" and a launch verb in the text (B-57's rule, used here first).
+// needs the type lens's "model" and a launch verb in the text (B-57, isLaunch).
 export function modelTies(row, models) {
   if (!models || row.fyiOnly || !(API.has(row.source) || RUNTIME.has(row.source))) return [];
   const have = new Set(row.projects || []);
-  const launch = isLaunch(row) && isLaunchText(`${row.title || ""} ${row.text || ""}`);
+  const launch = isLaunch(row);
   const refs = launch ? modelRefs(`${row.title || ""} ${row.text || ""}`) : null;
   const scope = launch ? null : modelScope(row.text, { title: row.title });
   const out = [];

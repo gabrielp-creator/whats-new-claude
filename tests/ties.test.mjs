@@ -116,6 +116,33 @@ test("verify stores code ties in evidence.jsonl with tiedBy, and loadRows adds t
   assert.match(r.stdout, /ties: 1 added by model,/);
 });
 
+test("B-57 end to end: a caching price change is tied by model and checked for cache_control", () => {
+  const ws = mkdtempSync(join(tmpdir(), "wnc-ws-")), home = mkdtempSync(join(tmpdir(), "wnc-home-")), data = mkdtempSync(join(tmpdir(), "wnc-data-"));
+  mkdirSync(join(ws, "app", "src"), { recursive: true });
+  writeFileSync(join(ws, "app", "src", "llm.ts"), 'const MODEL = "claude-sonnet-5-5";\nconst block = { cache_control: { type: "ephemeral" } };\n');
+  mkdirSync(join(ws, "web", "src"), { recursive: true });
+  writeFileSync(join(ws, "web", "src", "llm.ts"), 'const MODEL = "claude-sonnet-5-5";\n');
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(data, "config.json"), JSON.stringify({ workspaceRoot: ws, projects: [
+    { id: "app", description: "An app", path: "app", briefDir: "app/docs" },
+    { id: "web", description: "A site", path: "web", briefDir: "web/docs" },
+  ] }));
+  const items = [{ id: "platform:2026-10-07:0", source: "platform-release-notes", date: "2026-10-07", title: "Claude Platform release notes",
+    text: "We've lowered the price of prompt cache reads on Claude Sonnet 5.5 from $0.20 USD to $0.10 USD per million tokens.", url: "https://platform.claude.com/docs/en/release-notes/overview", provenance: "anthropic-release", tripwires: [] }];
+  writeFileSync(join(data, "items.jsonl"), jsonl(items));
+  writeFileSync(join(data, "lens-impact.jsonl"), jsonl(items.map((i) => ({ id: i.id, effect: "improves", projects: [], new_work: false, strength: "medium", why: "w", injection: false }))));
+  writeFileSync(join(data, "lens-type.jsonl"), jsonl(items.map((i) => ({ id: i.id, type: "model", action: "model-refresh", injection: false }))));
+  writeFileSync(join(data, "lens-risk.jsonl"), jsonl(items.map((i) => ({ id: i.id, risk: "behavior-change", exposed: false, why: "rw", injection: false }))));
+  const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "scripts", "verify.mjs"), "--data", data], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.equal(r.status, 0, r.stderr);
+  const row = loadRows(data).rows[0];
+  const by = Object.fromEntries(row.ratings.map((x) => [x.project, x]));
+  assert.deepEqual([by.app.evidence, by.app.lo, by.app.hi], ["confirmed", 5, 8.4]);
+  assert.match(by.app.note, /check your price table: this project uses claude-sonnet-5-5 \(src\/llm\.ts:1\)/);
+  assert.deepEqual([by.web.evidence, by.web.lo, by.web.hi], ["not-found", 2, 5.9]);
+  assert.match(by.web.note, /sends no `cache_control`/);
+});
+
 // B-58 (LNC 5): SDK items reach only projects that have that SDK, and every project that has it.
 const profile = (packages) => ({ packages: packages.map((name) => ({ name, file: "package.json" })) });
 const PROFILES = {

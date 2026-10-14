@@ -64,3 +64,16 @@ test("launchStatus: a model listed as in use is never repeated as an older one",
   assert.deepEqual(launchStatus(refs, ["claude-opus-5", "claude-opus-5-5", "claude-opus-4-8"]),
     { status: "adopted", uses: ["claude-opus-5", "claude-opus-5-5"], older: ["claude-opus-4-8"] });
 });
+
+test("isLaunchText: a commit's 'Add Claude X' and 'Make Claude X the default' are launch templates (B-57)", () => {
+  for (const t of [
+    "Add Claude Sonnet 5.5 (`claude-sonnet-5-5`) as the current Sonnet, with Claude Sonnet 5 as the previous one",
+    "Make Claude Opus 5.5 (`claude-opus-5-5`) the default model across SKILL.md",
+  ]) assert.equal(isLaunchText(t), true, t);
+  for (const t of [
+    "Changed Sonnet 5's default auto-compact window to its full 1M context",
+    "Changed the default model on Pro and Team Standard plans from Sonnet to Opus",
+    "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort",
+    "Fixed the address field, Add Opus support later",
+  ]) assert.equal(isLaunchText(t), false, t);
+});

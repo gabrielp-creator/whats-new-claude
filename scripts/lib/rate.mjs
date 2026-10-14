@@ -3,7 +3,7 @@
 // Fetched text can move an item within its band, never out of it. Tested in tests/rate.test.mjs.
 
 import { injectionFlag } from "./batch.mjs";
-import { parseModel, modelRefs, launchStatus } from "./models.mjs";
+import { parseModel, modelRefs, launchStatus, isLaunchText } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
@@ -27,8 +27,23 @@ const round1 = (n) => Math.round(n * 10) / 10;
 export const termKind = (t, { callsClaude = false } = {}) => (t.startsWith("/") || (t.startsWith("-") && !callsClaude) ? "typed" : "file");
 
 // A model launch, rather than a retirement or a breaking change: finding the new id means the project
-// has already moved, so the file check reads the other way round (B-29).
-export const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
+// has already moved, so the file check reads the other way round (B-29). The type lens's "model" label
+// covers prices, limits and availability too, so a launch also needs a launch template in the text
+// (B-57, P-10: "available for X" is not one).
+export const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking"
+  && isLaunchText(`${row.title || ""} ${row.text || ""}`);
+
+// B-57: a "model" item that changes a price or a limit, not a launch: "price", "limit" or null. Skill and
+// cookbook commits quote price tables in passing; B-40 decides them.
+const PRICE = /\bpric(?:e|es|ed|ing)\b|\$\d|\bper million tokens\b|\bMTok\b/i;
+const LIMIT = /\brate limits?\b|\bcontext window\b|\bmax(?:imum)? output\b|\boutput (?:token )?limits?\b|\btoken limits?\b/i;
+const CACHE = /\bprompt cach|\bcache (?:reads?|writes?|hits?)\b/i;
+export const priceChange = (row) => (row.type !== "model" || row.source === "skills" || row.source === "cookbooks"
+  || isLaunch(row) || row.risk === "deprecation" || row.risk === "breaking" ? null
+  : PRICE.test(row.text || "") ? "price" : LIMIT.test(row.text || "") ? "limit" : null);
+// The extra name verify.mjs looks up for a price change: a caching price matters only to code that
+// marks cache breakpoints.
+export const priceTerms = (row) => (priceChange(row) === "price" && CACHE.test(row.text || "") ? ["cache_control"] : []);
 
 // The panel's tripwire set (P-4, P-5): never dropped, never below soon.
 const SERIOUS = /security|break|deprecat|retir/;
@@ -82,7 +97,7 @@ export function bounds(row, project, evs, models) {
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
   const mentionedIn = e?.mentioned || [];
-  let evidence = "unchecked", foundIn = [], note = "", verdict = null;
+  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false;
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
   else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
@@ -119,14 +134,44 @@ export function bounds(row, project, evs, models) {
       // No pinned id and no alias: which model it runs is unknown, never "other models" (B-39).
       evidence = "unknown"; note = "no model id or alias found in this project's code or config";
     }
+  } else if ((kind = priceChange(row)) && inv) {
+    // B-57: a price or limit change. On a model the project pins, inside the item's scope: soon, with
+    // its file and line; a caching price also needs `cache_control` in a fully searched project.
+    // Otherwise later, one line. Never a model-refresh.
+    priceOnly = true;
+    const lower = (band) => { if (BANDS[band][1] < hi) [lo, hi] = BANDS[band]; }; // never raises the lenses' band
+    const scope = modelScope(row.text, { title: row.title });
+    const inUse = (inv.used || uses.map((id) => ({ id }))).filter((u) => inScope(scope, u.id) === "in");
+    const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
+    const named = inUse.map((u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`);
+    const what = kind === "price" ? "check your price table" : "check your limits";
+    const noCache = e?.checked?.includes("cache_control") && !foundIn.some((f) => f.term === "cache_control");
+    if (inUse.length && noCache) {
+      lower("later"); evidence = "not-found";
+      note = `uses ${list(named)} but sends no \`cache_control\`: the cache price does not apply yet`;
+    } else if (inUse.length) {
+      lower("soon"); evidence = "confirmed";
+      foundIn = [...inUse.map((u) => ({ term: u.id, file: at(u) })), ...foundIn];
+      note = `${what}: this project uses ${list(named)}`;
+    } else if (inv.partial) {
+      lower("soon"); evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit";
+    } else {
+      lower("later"); evidence = uses.length ? "other-models" : "unknown";
+      const fams = new Set(scope.clauses.filter((c) => !c.loose).map((c) => c.family));
+      const reach = aliases.filter((x) => !pinned.has(x.family) && fams.has(x.family));
+      const a = reach.find((x) => !/\.md$/i.test(x.file)) || reach[0]; // cite code before front matter
+      note = a ? `your \`${a.alias}\` alias may run it (${a.file}:${a.line}): ${what}`
+        : uses.length ? `this project uses ${list(known)}` : "no model id or alias found in this project's code or config";
+    }
   } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
     // A retirement or breaking change in an alias's family: the alias may run the affected model.
     asAlias();
-  } else if ((verdict = scopeVerdict(row, inv, foundIn)) && (verdict.state === "out" ? evidence !== "not-found" : evidence === "confirmed" || evidence === "mentioned")) {
+  } else if ((verdict = scopeVerdict(row, inv, foundIn)) && (verdict.state === "out" ? evidence !== "not-found" : evidence === "confirmed" || evidence === "mentioned" || row.type === "model")) {
     // The scope decides before keyword evidence: a name found here is context, not use (B-50, SU 1).
     // A change scoped to models the project does not use matters when it moves to one of them (B-33);
     // "not-found" already says the project does not use it, under the same cap. When only an alias can
-    // reach the named models, the project is asked which model it runs, at soon (P-14).
+    // reach the named models, the project is asked which model it runs, at soon (P-14): for a keyword
+    // hit, and for any item about a model (as launches are).
     const hits = foundIn.map((f) => `\`${f.term}\` in ${f.file}`);
     const context = hits.length ? `; ${list(hits)} is not about these models` : "";
     foundIn = [];
@@ -148,7 +193,7 @@ export function bounds(row, project, evs, models) {
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
   // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
   if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -175,6 +220,7 @@ export function rateRow(row, evs, orch, models) {
     let act = a && ACTIONS.has(a.do) ? a.do : "read";
     if (row.fyiOnly && act === "try-feature") act = "read";
     if (b.readOnly && act !== "ignore") act = "read";
+    if (b.priceOnly && act === "model-refresh") act = "read"; // a price or limit change needs no model change (B-57)
     return {
       project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note,
       score: score ?? codeScore(row, b),

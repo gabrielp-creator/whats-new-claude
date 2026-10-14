@@ -487,3 +487,92 @@ test("B-40: setup, tripwire items and other Claude Code items keep their band", 
   assert.ok(bounds({ ...skillDefault, type: "security", risk: "security" }, "app", [], appOnly).hi > BANDS.later[1], "a security item (P-4)");
   assert.ok(bounds(row({ source: "claude-code", type: "bug-fix", risk: "none", text: "Fixed a crash on startup" }), "app", [], appOnly).hi > BANDS.later[1]);
 });
+
+// B-57 (LNC 1, P-10): a launch needs type "model" and a launch template; a price or limit change is
+// its own kind: soon with "check your price table" on a model in use, else later, one line.
+import { isLaunch, priceChange, priceTerms } from "../scripts/lib/rate.mjs";
+const cachePrice = row({ source: "platform-release-notes", type: "model", risk: "behavior-change", title: "Claude Platform release notes",
+  text: "We've lowered the price of prompt cache reads on Claude Sonnet 5.5 from $0.20 USD to $0.10 USD per million tokens: 0.05x the base input price instead of 0.1x. Cache writes and all other prices are unchanged." });
+const listPrice = row({ ...cachePrice, text: "The introductory pricing for Claude Sonnet 5 ($2 / $10 per MTok) is now the standard price: the previously scheduled increase to $3 / $15 per MTok on 2026-09-01 will not happen." });
+const used = (ids, o = {}) => ({ app: { models: ids, used: ids.map((id, n) => ({ id, file: "src/llm.ts", line: 10 + n })), aliases: [], partial: false, ...o } });
+
+test("B-57: isLaunch needs a launch template; 'available for' and price notes are not launches (P-10)", () => {
+  assert.equal(isLaunch(launch), true);
+  assert.equal(isLaunch(haikuLaunch), true);
+  assert.equal(isLaunch(row({ type: "model", risk: "none", text: "Both toolsets are available for Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Sonnet 5, and Claude Opus 4.8 on the Claude API." })), false);
+  assert.equal(isLaunch(cachePrice), false);
+  assert.equal(isLaunch({ ...launch, type: "behavior-change" }), false, "the type lens's model label is still needed");
+  assert.equal(priceChange(cachePrice), "price");
+  assert.equal(priceChange(listPrice), "price");
+  assert.equal(priceChange(row({ type: "model", risk: "none", text: "Changed Opus 4.7+ and Fable to use a 1M context window by default on Bedrock" })), "limit");
+  assert.equal(priceChange(launch), null, "a launch with its price is a launch");
+  assert.equal(priceChange(row({ ...cachePrice, type: "bug-fix" })), null, "model items only");
+});
+
+test("B-57: a price change on models the project does not use: other-models, later band, no model-refresh (LNC 1)", () => {
+  const inv2 = used(["claude-opus-4-8", "claude-haiku-4-5"]);
+  const b = bounds(cachePrice, "app", [], inv2);
+  assert.equal(b.evidence, "other-models");
+  assert.deepEqual([b.lo, b.hi], BANDS.later);
+  assert.match(b.note, /this project uses claude-opus-4-8, claude-haiku-4-5/);
+  const r = rateRow({ ...cachePrice, projects: ["app"] }, [], { id: "x:1", ratings: [{ project: "app", score: 9, do: "model-refresh", why: "w" }] }, inv2);
+  assert.equal(r.ratings[0].do, "read");
+  assert.ok(r.ratings[0].score <= BANDS.later[1]);
+});
+
+test("B-57: a price change on a model in use: soon, 'check your price table', with the file and line", () => {
+  const b = bounds(listPrice, "app", [], used(["claude-sonnet-5"]));
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.match(b.note, /check your price table: this project uses claude-sonnet-5 \(src\/llm\.ts:10\)/);
+  assert.deepEqual(b.foundIn, [{ term: "claude-sonnet-5", file: "src/llm.ts:10" }]);
+  assert.deepEqual(priceTerms(listPrice), [], "a list price needs no extra check");
+});
+
+test("B-57: a caching price change looks for cache_control: found = soon, absent from a full walk = later", () => {
+  assert.deepEqual(priceTerms(cachePrice), ["cache_control"]);
+  const inv2 = used(["claude-sonnet-5-5"]);
+  const hit = bounds(cachePrice, "app", [ev({ checked: ["cache_control"], found: [{ term: "cache_control", file: "src/llm.ts" }] })], inv2);
+  assert.deepEqual([hit.lo, hit.hi], BANDS.soon);
+  assert.match(hit.note, /check your price table/);
+  const miss = bounds(cachePrice, "app", [ev({ checked: ["cache_control"], found: [] })], inv2);
+  assert.deepEqual([miss.lo, miss.hi], BANDS.later);
+  assert.equal(miss.evidence, "not-found");
+  assert.match(miss.note, /uses claude-sonnet-5-5 \(src\/llm\.ts:10\) but sends no `cache_control`/);
+  const partial = bounds(cachePrice, "app", [ev({ checked: [], found: [] })], used(["claude-sonnet-5-5"], { partial: true }));
+  assert.deepEqual([partial.lo, partial.hi], BANDS.soon, "a partial walk proves no absence");
+});
+
+test("B-57: a price change for a project with no pinned id is later, one line; an alias of the family is named", () => {
+  const none = bounds(cachePrice, "app", [], used([]));
+  assert.deepEqual([none.lo, none.hi], BANDS.later);
+  assert.equal(none.evidence, "unknown");
+  const alias = bounds(cachePrice, "app", [], used([], { aliases: [{ alias: "sonnet", family: "sonnet", file: "a.ts", line: 2 }] }));
+  assert.deepEqual([alias.lo, alias.hi], BANDS.later);
+  assert.match(alias.note, /your `sonnet` alias may run it \(a\.ts:2\): check your price table/);
+});
+
+test("B-57: a price or limit rule only lowers a band, never raises one", () => {
+  const limit = row({ source: "claude-code", type: "model", risk: "none", urgencyLabel: "none", text: "Changed Opus 4.7+ and Fable to use a 1M context window by default on Bedrock" });
+  const b = bounds(limit, "app", [], used(["claude-opus-5-5"]));
+  assert.deepEqual([b.lo, b.hi], BANDS.none, "the lenses' none band stays");
+  const later = bounds({ ...listPrice, urgencyLabel: "later" }, "app", [], used(["claude-sonnet-5"]));
+  assert.deepEqual([later.lo, later.hi], BANDS.later);
+});
+
+test("B-57: skill and cookbook commits are never price changes (B-40 decides them)", () => {
+  assert.equal(priceChange({ ...listPrice, source: "skills" }), null);
+  assert.equal(priceChange({ ...listPrice, source: "cookbooks" }), null);
+});
+
+test("B-57: a non-launch model item that only an alias can reach keeps the alias question, at soon", () => {
+  const compact = row({ source: "claude-code", type: "model", risk: "behavior-change", text: "Changed Sonnet 5's default auto-compact window to its full 1M context" });
+  const b = bounds(compact, "app", [], { app: { models: ["claude-opus-5-5"], aliases: [{ alias: "sonnet", family: "sonnet", file: "lenses/l.md", line: 3 }], partial: false } });
+  assert.equal(b.evidence, "alias");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+});
+
+test("B-57: the price note cites an alias in code before one in front matter", () => {
+  const b = bounds(cachePrice, "app", [], used([], { aliases: [{ alias: "sonnet", family: "sonnet", file: ".claude/lenses/l.md", line: 3 }, { alias: "sonnet", family: "sonnet", file: "scripts/run.mjs", line: 14 }] }));
+  assert.match(b.note, /\(scripts\/run\.mjs:14\)/);
+});

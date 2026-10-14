@@ -29,6 +29,8 @@ const JOIN = /^(?:\s*,\s*|\s*,?\s+(?:and|or)\s+|\s+)(?:Claude\s+)?$/;
 const AFTER = /^\s*,?\s+(?:and|or)\s+(?:a\s+)?(newer|later|above|higher|earlier|older)\b(?:\s+(?:Claude\s+)?(?:models?|ones?|versions?))?/;
 // Phrases that leave the set open: examples, classes of models, "a newer one".
 const OPEN = /\b(?:including|such as|e\.g\.|for example|models? that|models? with(?:out)?|(?:or|and) (?:a )?(?:newer|later|earlier|older) (?:one|model)s?|(?:newer|later|earlier|older|other|all|every|most|any|some|supported) (?:Claude )?models?)\b/i;
+// "Earlier models aren't affected": a closing remark, not an open class of models.
+const UNAFFECTED = /\b(?:earlier|older|other|previous) (?:Claude )?models? (?:(?:aren't|are not|isn't|is not) (?:affected|changed)|(?:are|remain) un(?:affected|changed))\b/gi;
 // The first sentence says what the change is on: "Code written for X can break on Y", or the text
 // opens with "On X,". Then that sentence is the scope, and models named later are in passing.
 const SUBJECT = /\bbreaks? on\s+(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos|claude-)|^On\s+(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos|claude-)[^,]*,/;
@@ -96,7 +98,7 @@ export function modelScope(text, { title = "" } = {}) {
     }
     clauses.unshift(...l.clauses);
   }
-  if (OPEN.test(masked)) open = "all";
+  if (OPEN.test(masked.replace(UNAFFECTED, " "))) open = "all";
   return { clauses, open, subject };
 }
 

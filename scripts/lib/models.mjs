@@ -103,6 +103,7 @@ export function launchStatus(refs, projectIds) {
 }
 
 // A launch is said with a launch verb right before the model's name, in one clause: "We've launched
-// Claude X", "Added Claude X", "Introducing Claude X". "Available for X" is not a launch (B-57, P-10).
-const LAUNCH = /\b(?:launch(?:ed|es|ing)?|[Aa]dd(?:ed|s|ing)|[Ii]ntroduc(?:ing|es|ed)|[Rr]eleas(?:ed|es|ing))\s+(?:the\s+new\s+|new\s+)?(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos)\s+\d/;
+// Claude X", "Added Claude X", "Introducing Claude X"; in a commit, "Add Claude X" and "Make Claude X
+// the default". "Available for X" is not a launch (B-57, P-10).
+const LAUNCH = /\b(?:launch(?:ed|es|ing)?|[Aa]dd(?:ed|s|ing)?|[Ii]ntroduc(?:ing|es|ed)|[Rr]eleas(?:ed|es|ing))\s+(?:the\s+new\s+|new\s+)?(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos)\s+\d|\b[Mm]ak(?:e|es|ing)\s+(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos)\s+\d[\d.]*\s*(?:\([^)]*\)\s*)?the\s+default\b/;
 export const isLaunchText = (text) => LAUNCH.test(String(text || ""));

@@ -16,6 +16,7 @@ import { dataDir, writeJsonl, writeJson } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
 import { extractTerms } from "./lib/probe.mjs";
+import { priceTerms } from "./lib/rate.mjs";
 import { safeBriefDir } from "./lib/paths.mjs";
 import { collect as walk } from "./lib/walk.mjs";
 import { useIndex, lookup } from "./lib/use.mjs";
@@ -93,7 +94,8 @@ for (const r of rows) {
   const ties = new Map(change.add.map((t) => [t.project, t]));
   const dropped = new Map(change.drop.map((d) => [d.project, d]));
   const current = { ...r, projects: [...r.projects.filter((p) => !dropped.has(p)), ...ties.keys()] };
-  const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
+  // A caching price change also looks for cache breakpoints in the code (B-57).
+  const terms = [...extractTerms(`${r.title || ""} ${r.text || ""}`), ...priceTerms(r)];
   const conds = profileTerms(`${r.title || ""} ${r.text || ""}`);
   // The file check for one project, or null when there is nothing to check it with.
   const check = (proj) => {

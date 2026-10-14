@@ -108,3 +108,10 @@ test("nothing to go on is unknown: no model named, an unparsed project id, lower
   assert.equal(at(PLUS, "sonnet"), "unknown", "an alias is not a model id");
   assert.deepEqual(modelScope("switch with `/model opusplan`, or an opus 5 poem").clauses, []);
 });
+
+test("'earlier models aren't affected' closes the scope instead of opening it", () => {
+  const t = "Thinking blocks that Claude Sonnet 5.5 produces work only in the account that produced them. Blocks from earlier models aren't affected. See Preserved thinking.";
+  each(t, { "claude-sonnet-5-5": "in", "claude-sonnet-4-6": "out", "claude-opus-5-5": "out" });
+  each("Changed Claude Opus 5.5; other models are not affected", { "claude-opus-5": "out" });
+  each("Changed Claude Opus 5.5 and earlier models", { "claude-opus-5": "in" }); // a range, not a closing remark
+});
