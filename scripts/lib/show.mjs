@@ -76,6 +76,21 @@ export function topPicks(rows, { min, project, days, now = Date.now() }) {
   return picks;
 }
 
+// B-43 (Gabriel, 2026-10-13): the picks "export top picks" writes. Nothing at the threshold falls
+// back to 7+ and says so; nothing at 7+ either is one plain line, never an error.
+const FALLBACK_MIN = 7;
+export function exportPicks(rows, { min, project, days, now = Date.now() }) {
+  const where = project ? `for ${project}` : "across your projects";
+  let picks = topPicks(rows, { min, project, days, now }), used = min, message = "";
+  if (!picks.length && min > FALLBACK_MIN) {
+    picks = topPicks(rows, { min: FALLBACK_MIN, project, days, now });
+    used = FALLBACK_MIN;
+    if (picks.length) message = `Nothing rated ${min}+ ${where} in the last ${days} days; using ${FALLBACK_MIN}+.`;
+  }
+  if (!picks.length) message = `Nothing rated ${used}+ ${where} in the last ${days} days, so no brief was written. Try a lower --min, or see the page.`;
+  return { picks, min: used, message };
+}
+
 export function lastChecked(state, now = Date.now()) {
   const times = Object.values(state?.sources || {}).map((s) => s.lastSuccess).filter(Boolean).sort();
   if (!times.length) return "never";

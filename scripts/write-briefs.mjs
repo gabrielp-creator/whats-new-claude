@@ -15,7 +15,7 @@ import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
 import { buildBrief, briefFileName } from "./lib/brief.mjs";
 import { safeBriefDir, inProjectScope, recheckCreated } from "./lib/paths.mjs";
-import { topPicks } from "./lib/show.mjs";
+import { exportPicks } from "./lib/show.mjs";
 import { parseCommand } from "./lib/args.mjs";
 
 const DATA = dataDir();
@@ -38,7 +38,10 @@ const allRows = loadRows(DATA).rows;
 const rows = new Map(allRows.map((r) => [r.id, r]));
 let exp;
 if (FILE === "top") {
-  exp = { picks: topPicks(allRows, { min: OPTS.min ?? config.minRating, project: OPTS.project, days: 30 }) };
+  const chosen = exportPicks(allRows, { min: OPTS.min ?? config.minRating, project: OPTS.project, days: 30 });
+  if (chosen.message) console.log(chosen.message);
+  if (!chosen.picks.length) process.exit(0);
+  exp = { picks: chosen.picks };
 } else exp = JSON.parse(readFileSync(FILE, "utf8"));
 // The page's plain-language rewrites are model output that page viewers can edit: never put in a brief.
 const folders = new Map((exp.folders || []).map((f) => [f.id, f.data?.dir]));

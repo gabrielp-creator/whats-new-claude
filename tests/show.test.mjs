@@ -127,3 +127,22 @@ test("formatList and hereList carry the code-made model note (B-29, B-33)", () =
   assert.equal(list[0].note, "upgrade from claude-opus-4-8");
   assert.match(formatList(list, { heading: "app", lastChecked: "x" }), /upgrade from claude-opus-4-8/);
 });
+
+// B-43 (Gabriel, 2026-10-13): nothing at the threshold falls back to 7+ and says so; nothing at 7+
+// either is said plainly, never a stack trace.
+import { exportPicks } from "../scripts/lib/show.mjs";
+test("B-43: export falls back from 8+ to 7+ and says so; nothing at all is a plain line", () => {
+  const today = Date.parse("2026-10-14T12:00:00Z");
+  const at = (id, project, score) => ({ id, date: "2026-10-10", ratings: [{ project, score }] });
+  const rows = [at("a", "app", 7.4), at("b", "web", 8.2)];
+  const full = exportPicks(rows, { min: 8, days: 30, now: today });
+  assert.deepEqual([full.picks.map((p) => p.id), full.min, full.message], [["b"], 8, ""]);
+  const app = exportPicks(rows, { min: 8, project: "app", days: 30, now: today });
+  assert.deepEqual([app.picks.map((p) => p.id), app.min], [["a"], 7]);
+  assert.equal(app.message, "Nothing rated 8+ for app in the last 30 days; using 7+.");
+  const none = exportPicks([at("c", "app", 5)], { min: 8, project: "app", days: 30, now: today });
+  assert.deepEqual(none.picks, []);
+  assert.equal(none.message, "Nothing rated 7+ for app in the last 30 days, so no brief was written. Try a lower --min, or see the page.");
+  assert.equal(exportPicks([at("c", "app", 6.5)], { min: 6, days: 30, now: today }).min, 6, "an explicit lower threshold has no fallback");
+  assert.equal(exportPicks([], { min: 6, days: 30, now: today }).message, "Nothing rated 6+ across your projects in the last 30 days, so no brief was written. Try a lower --min, or see the page.");
+});
