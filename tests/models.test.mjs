@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseModel, modelRefs, launchStatus, scopeOverlap } from "../scripts/lib/models.mjs";
+import { parseModel, modelRefs, launchStatus, scopeOverlap, isLaunchText } from "../scripts/lib/models.mjs";
+
+// B-57 (P-10): a launch is said with a launch verb next to the model's name, in one clause.
+test("isLaunchText: launch verbs next to a model name; 'available' and passing mentions are not launches", () => {
+  for (const t of [
+    "We've launched Claude Haiku 5.5 (claude-haiku-5-5), our most capable model tuned for high-volume work",
+    "Added Claude Sonnet 5.5 (`claude-sonnet-5-5`), now the default Sonnet model on the Anthropic API",
+    "Introducing Claude Opus 5.5",
+  ]) assert.equal(isLaunchText(t), true, t);
+  for (const t of [
+    "Both toolsets are available for Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Sonnet 5, and Claude Opus 4.8 on the Claude API.",
+    "Thinking blocks that Claude Sonnet 5.5 produces work only in the account that produced them",
+    "Fast mode (research preview) is available for Claude Opus 5.5 on the Claude API.",
+    "Added a line field to the Models API. Claude Opus 4.5 and Claude Opus 4.6 both report opus",
+    "Added `--model` support; we launched it. Claude Opus 5 is unchanged",
+  ]) assert.equal(isLaunchText(t), false, t);
+});
 
 test("parseModel reads current, dated, cloud and old-style ids into family and version", () => {
   assert.deepEqual(parseModel("claude-opus-5-5"), { family: "opus", version: [5, 5], id: "claude-opus-5-5" });

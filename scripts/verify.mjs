@@ -23,6 +23,7 @@ import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
 import { readVersion, versionFor } from "./lib/version.mjs";
+import { modelTies } from "./lib/ties.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -77,28 +78,38 @@ for (const p of config.projects) {
   for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
 }
 
+// Ties first (M3, P-25): code adds the projects whose own models the item is about (B-48), and the
+// lenses' "no effect" filter below applies to the lenses' ties only. Each code-made tie gets an
+// evidence row with tiedBy, so loadRows adds the project without recomputing anything.
 const out = [];
-let confirmed = 0, mentioned = 0, notFound = 0;
+let confirmed = 0, mentioned = 0, notFound = 0, added = 0;
 for (const r of rows) {
-  if (r.effect === "none" && !r.riskExposed) continue;
+  const ties = new Map(modelTies(r, models).map((t) => [t.project, t]));
+  added += ties.size;
+  const projects = [...(r.effect === "none" && !r.riskExposed ? [] : r.projects), ...ties.keys()];
   const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
   const conds = profileTerms(`${r.title || ""} ${r.text || ""}`);
-  if (!terms.length && !conds.length) continue;
+  const tag = (proj) => (ties.has(proj) ? { tiedBy: ties.get(proj).tiedBy, ties: ties.get(proj).ids } : { tiedBy: "lens" });
+  if (!terms.length && !conds.length) {
+    for (const proj of ties.keys()) out.push({ id: r.id, project: proj, ...tag(proj), checked: [], found: [], mentioned: [] });
+    continue;
+  }
   let any = false, named = false;
-  for (const proj of r.projects) {
+  for (const proj of projects) {
     const ix = indexes.get(proj);
-    if (!ix) continue;
+    if (!ix) { if (ties.has(proj)) out.push({ id: r.id, project: proj, ...tag(proj), checked: [], found: [], mentioned: [] }); continue; }
     const { found: inFiles, mentioned: only } = lookup(terms, ix);
     // The profile reads settings files directly, so the file cap never hides its answer.
     const fromProfile = profileLookup(conds, profiles[proj]);
     const found = [...inFiles, ...fromProfile.found];
     if (found.length) any = true;
     if (only.length) named = true;
-    out.push({ id: r.id, project: proj, checked: [...(inFiles.length || !partial.has(proj) ? terms : []), ...fromProfile.checked], found, mentioned: only });
+    out.push({ id: r.id, project: proj, ...tag(proj), checked: [...(inFiles.length || !partial.has(proj) ? terms : []), ...fromProfile.checked], found, mentioned: only });
   }
-  if (any) confirmed++; else if (named) mentioned++; else if (r.projects.some((p) => indexes.has(p))) notFound++;
+  if (any) confirmed++; else if (named) mentioned++; else if (projects.some((p) => indexes.has(p))) notFound++;
 }
 writeJsonl(join(DATA, "evidence.jsonl"), out);
 writeJson(join(DATA, "models.json"), models);
 writeJson(join(DATA, "profile.json"), profiles);
+console.log(`ties: ${added} (item, project) pair${added === 1 ? "" : "s"} added by model (the project's own models are in the item's scope)`);
 console.log(`evidence: ${confirmed} item(s) confirmed in your config or code, ${mentioned} only mentioned (docs, data, comments), ${notFound} checked and not found`);

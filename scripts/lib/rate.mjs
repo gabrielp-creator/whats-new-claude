@@ -27,7 +27,7 @@ export const termKind = (t, { callsClaude = false } = {}) => (t.startsWith("/") 
 
 // A model launch, rather than a retirement or a breaking change: finding the new id means the project
 // has already moved, so the file check reads the other way round (B-29).
-const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
+export const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
 const list = (ids) => ids.slice(0, 3).join(", ") + (ids.length > 3 ? ` +${ids.length - 3}` : "");
 
 // evs: verify.mjs evidence rows for this item ({project, checked, found, mentioned}). checked is []
