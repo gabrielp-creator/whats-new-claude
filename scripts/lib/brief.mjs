@@ -67,7 +67,10 @@ export function buildBrief(project, items, { date, dir, rootLabel = "your worksp
     }
     if (i.why) out.push("", `Why it was flagged: ${oneLine(i.why)}`);
     if (i.riskWhy) out.push(`Risk: ${oneLine(i.riskWhy)}`);
-    const here = (i.foundIn || []).filter((f) => f.project === project);
+    // The project's own rating says what counts as found there: a hit its model scope rules out is
+    // context in the rating's note, not a "Found in" line (B-50).
+    const rating = (i.ratings || []).find((r) => r.project === project);
+    const here = rating ? rating.foundIn || [] : (i.foundIn || []).filter((f) => f.project === project);
     if (here.length) out.push(`Found in this project: ${here.slice(0, 5).map((f) => `\`${oneLine(f.term)}\` in \`${oneLine(f.file)}\``).join(", ")}`);
     // The prompt is pasted as the user's own words into a session with tools, so it carries no fetched
     // text at all: it points at the quote above, which stays marked as data.

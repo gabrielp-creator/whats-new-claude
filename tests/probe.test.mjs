@@ -64,6 +64,32 @@ test("a name only mentioned (docs, data, comments) is 'mentioned': no +2, and no
   assert.deepEqual(mixed.confirmedIn, ["web"]);
 });
 
+// B-50 (SU 1): no +2 for a hit the item's model scope rules out, or for one resting only on a generic
+// settings key.
+const effort = row({ urgency: 82, urgencyLabel: "urgent", type: "breaking-or-deprecation", risk: "behavior-change",
+  text: "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort over `effortLevel`" });
+const keyHit = [{ project: "app", checked: ["effortLevel"], found: [{ term: "effortLevel", file: "settings.json" }] }];
+
+test("B-50: a keyword hit on a change scoped to other models is not a confirmation and adds nothing", () => {
+  const r = applyEvidence(effort, keyHit, { app: { models: ["claude-opus-5-5"], partial: false } });
+  assert.equal(r.urgency, 82);
+  assert.deepEqual(r.confirmedIn, []);
+  assert.notEqual(r.evidence, "confirmed");
+});
+
+test("B-50: a confirmation resting only on a camelCase key in a settings file keeps its tier without +2", () => {
+  const r = applyEvidence(effort, keyHit, { app: { models: ["claude-opus-4-8"], partial: false } });
+  assert.equal(r.evidence, "confirmed");
+  assert.deepEqual(r.confirmedIn, ["app"]);
+  assert.equal(r.urgency, 82);
+  const local = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: ".claude/settings.local.json" }] }], undefined);
+  assert.equal(local.urgency, 82);
+  const inCode = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: "src/run.ts" }] }], undefined);
+  assert.equal(inCode.urgency, 84, "the same key in code is real use");
+  const model = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: "settings.json" }, { term: "claude-opus-4-8", file: "settings.json" }] }], undefined);
+  assert.equal(model.urgency, 84, "a model id is not a generic key");
+});
+
 test("nothing to check, or a project left unchecked, is unchecked", () => {
   assert.equal(applyEvidence(row(), []).evidence, "unchecked");
   assert.equal(applyEvidence(row({ projects: ["app", "web"] }), [{ project: "app", checked: ["x"], found: [] }]).evidence, "unchecked");

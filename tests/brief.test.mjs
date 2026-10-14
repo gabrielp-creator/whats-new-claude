@@ -56,6 +56,14 @@ test("a brief names where the item was found in that project only", () => {
   assert.doesNotMatch(md, /w\.ts/);
 });
 
+test("B-50: a hit the project's rating turned into context is not printed as 'Found in' (SU 1)", () => {
+  const item = it({ foundIn: [{ project: "app", term: "effortLevel", file: "settings.json" }],
+    ratings: [{ project: "app", evidence: "other-models", foundIn: [], note: "applies when you move to claude-opus-4-8" }] });
+  assert.doesNotMatch(buildBrief("app", [item], opts), /Found in this project/);
+  const kept = it({ ratings: [{ project: "app", evidence: "confirmed", foundIn: [{ term: "effortLevel", file: "settings.json" }] }] });
+  assert.match(buildBrief("app", [kept], opts), /Found in this project: `effortLevel` in `settings\.json`/);
+});
+
 import { safeUrl } from "../scripts/lib/brief.mjs";
 
 test("safeUrl keeps https links on the three source hosts and nothing else", () => {

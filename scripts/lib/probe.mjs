@@ -3,6 +3,7 @@
 // look them up in a project's own files. A match confirms the item; no match is only a note.
 // Tested in tests/probe.test.mjs.
 import { labelFor } from "./merge.mjs";
+import { scopeVerdict } from "./rate.mjs";
 
 const STOP = new Set(["true", "false", "null", "undefined", "README", "CHANGELOG"]);
 // Names too common to prove anything: generic config files, and slash commands, which release notes
@@ -48,10 +49,15 @@ export function tokenIndex(files) {
 // item sorts first within its tier (+2 never crosses a tier boundary: see the bases in merge.mjs). Not
 // found is only a note: commands people type never appear in files, and absence of evidence is
 // unknown, not none. A mention is context, neither a confirmation nor a "not found".
-export function applyEvidence(row, evs) {
-  const found = evs.filter((e) => e.found.length);
+// models: verify.mjs models.json. A hit in a project the item's model scope rules out is context, not
+// a confirmation, and one resting only on camelCase keys in settings files adds no +2 (B-50, SU 1):
+// `effortLevel` anywhere in settings.json says nothing about which model it is set for.
+const SETTINGS_FILE = /(?:^|[/\\])settings(?:\.local)?\.json$/i;
+const genericKey = (f) => /^[a-z]+(?:[A-Z][a-z0-9]*)+$/.test(f.term) && SETTINGS_FILE.test(f.file);
+export function applyEvidence(row, evs, models) {
+  const found = evs.filter((e) => e.found.length && !scopeVerdict(row, models?.[e.project], e.found));
   if (found.length) {
-    const urgency = row.urgency + 2;
+    const urgency = row.urgency + (found.some((e) => e.found.some((f) => !genericKey(f))) ? 2 : 0);
     return { ...row, evidence: "confirmed", confirmedIn: found.map((e) => e.project), urgency, urgencyLabel: labelFor(urgency) };
   }
   if (evs.some((e) => e.mentioned?.length)) return { ...row, evidence: "mentioned", confirmedIn: [] };

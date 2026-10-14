@@ -41,7 +41,7 @@ export function loadRows(dir, { evidence = true } = {}) {
     const tied = evs.filter((e) => e.tiedBy && e.tiedBy !== "lens" && !e.dropped && !row.projects.includes(e.project)).map((e) => e.project);
     if (tied.length || gone.size) row.projects = [...row.projects.filter((p) => !gone.has(p)), ...tied];
     row.dropped = drops.map((e) => ({ project: e.project, reason: e.dropped, why: e.why }));
-    const withEvidence = { ...applyEvidence(row, evs), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
+    const withEvidence = { ...applyEvidence(row, evs, models), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
     const stored = rated.get(i.id) || null;
     // toRate: rate-run.mjs should (re)rate it: never rated, or rated under a range that has since changed.
     const toRate = needsOrchestrator(withEvidence) && withEvidence.projects.length > 0 && (!stored || staleRating(withEvidence, stored, evs, models));

@@ -3,7 +3,8 @@
 // Fetched text can move an item within its band, never out of it. Tested in tests/rate.test.mjs.
 
 import { injectionFlag } from "./batch.mjs";
-import { parseModel, modelRefs, launchStatus, scopeOverlap } from "./models.mjs";
+import { parseModel, modelRefs, launchStatus } from "./models.mjs";
+import { modelScope, inScope } from "./scope.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
@@ -41,6 +42,33 @@ const DEFAULT_CHANGE = /\bclaude-api\b|\bdefault (?:\w+ )?model\b|\bnow the defa
 export const isSkillOrDefault = (row) => row.source === "skills" || (row.source === "claude-code" && DEFAULT_CHANGE.test(`${row.title || ""} ${row.text || ""}`));
 const list = (ids) => ids.slice(0, 3).join(", ") + (ids.length > 3 ? ` +${ids.length - 3}` : "");
 
+// One scope clause as the note names it: an id for a single version, the item's words for a range.
+const clauseName = (c) => (c.family && c.min && c.max && c.min.join() === c.max.join()
+  ? `claude-${c.family}-${c.min[0]}${c.min[1] ? `-${c.min[1]}` : ""}` : c.text.trim());
+
+// B-50: what a closed parse of the item's model scope (lib/scope.mjs, B-34) says about one project,
+// when it leaves out every model the project pins. {state: "out", names}: no alias can reach it either.
+// {state: "alias", alias}: the item names a family the project runs only by alias, which may run one
+// of its models (P-14; a pinned id of the family decides before an alias, as in B-39). Null when
+// anything is open: a launch (decided apart), a partial walk, open wording, a pinned model in scope,
+// or nothing pinned and no alias of a named family. found: the names the file check found; a model id
+// among them is use, whatever the inventory says.
+export function scopeVerdict(row, inv, found = []) {
+  if (isLaunch(row) || !inv || inv.partial) return null;
+  const uses = [...new Set([...(inv.models || []), ...found.map((f) => f.term).filter((t) => parseModel(t))])];
+  const scope = modelScope(row.text, { title: row.title });
+  const closed = scope.clauses.filter((c) => !c.loose);
+  if (!closed.length || scope.open === "all" || !uses.every((id) => inScope(scope, id) === "out")) return null;
+  const pinned = new Set(uses.map(parseModel).filter(Boolean).map((m) => m.family));
+  const named = (f) => closed.some((c) => c.family === null || c.family === f);
+  const free = (inv.aliases || []).filter((a) => a.family && !pinned.has(a.family));
+  // "and newer" leaves families it does not name open: an alias of one of them is not ruled out.
+  if (scope.open === "others" && free.some((a) => !named(a.family))) return null;
+  const reach = free.filter((a) => named(a.family));
+  if (reach.length) return { state: "alias", alias: reach.find((a) => !/\.md$/i.test(a.file)) || reach[0] };
+  return uses.length ? { state: "out", names: [...new Set(closed.map(clauseName))] } : null;
+}
+
 // evs: verify.mjs evidence rows for this item ({project, checked, found, mentioned}). checked is []
 // when the project was only partly searched and nothing matched, so a partial search can never cap.
 // mentioned: names seen only in docs, data or comments (B-47): context, never a confirmation.
@@ -54,7 +82,7 @@ export function bounds(row, project, evs, models) {
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
   const mentionedIn = e?.mentioned || [];
-  let evidence = "unchecked", foundIn = [], note = "";
+  let evidence = "unchecked", foundIn = [], note = "", verdict = null;
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
   else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
@@ -67,9 +95,9 @@ export function bounds(row, project, evs, models) {
   const aliases = (inv?.aliases || []).filter((a) => a.family);
   const inFamily = aliases.filter((a) => families.has(a.family) && !pinned.has(a.family));
   const exposed = inFamily.find((a) => !/\.md$/i.test(a.file)) || inFamily[0]; // cite code before front matter
-  const asAlias = () => {
+  const asAlias = (a = exposed) => {
     [lo, hi] = BANDS.soon; evidence = "alias";
-    note = `your \`${exposed.alias}\` alias may have moved: confirm which model it runs (${exposed.file}:${exposed.line})`;
+    note = `your \`${a.alias}\` alias may have moved: confirm which model it runs (${a.file}:${a.line})`;
   };
   const known = [...uses, ...new Set(aliases.map((a) => `the \`${a.alias}\` alias`))];
 
@@ -94,10 +122,19 @@ export function bounds(row, project, evs, models) {
   } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
     // A retirement or breaking change in an alias's family: the alias may run the affected model.
     asAlias();
-  } else if (!isLaunch(row) && refs.length && uses.length && evidence === "unchecked" && !aliases.some((a) => families.has(a.family)) && !scopeOverlap(refs, uses).length) {
-    // A change scoped to models the project does not use matters when it moves to one of them (B-33).
-    evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
-    note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
+  } else if ((verdict = scopeVerdict(row, inv, foundIn)) && (verdict.state === "out" ? evidence !== "not-found" : evidence === "confirmed" || evidence === "mentioned")) {
+    // The scope decides before keyword evidence: a name found here is context, not use (B-50, SU 1).
+    // A change scoped to models the project does not use matters when it moves to one of them (B-33);
+    // "not-found" already says the project does not use it, under the same cap. When only an alias can
+    // reach the named models, the project is asked which model it runs, at soon (P-14).
+    const hits = foundIn.map((f) => `\`${f.term}\` in ${f.file}`);
+    const context = hits.length ? `; ${list(hits)} is not about these models` : "";
+    foundIn = [];
+    if (verdict.state === "alias") { asAlias(verdict.alias); note += context; }
+    else {
+      evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
+      note = `applies when you move to ${list(verdict.names)}; this project uses ${list(uses)}${context}`;
+    }
   }
   // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
   // project gets "read" at most, in the later band. A skill's default never moves an alias, so skill

@@ -275,12 +275,70 @@ test("B-33: a change scoped to models the project does not use is capped at 7.9 
 });
 
 test("B-33: the band stays open when the project uses one of the named models, or its models are unknown", () => {
-  assert.equal(bounds(sonnetBreak, "app", [], inv(["claude-opus-4-8", "claude-opus-5-5"])).hi, 10);
+  assert.equal(bounds(sonnetBreak, "app", [], inv(["claude-sonnet-5", "claude-opus-5-5"])).hi, 10);
+  // B-50 (RF 2): Opus 4.8, named only in the advisor sentence after the subject, no longer opens it.
   assert.equal(bounds(sonnetBreak, "app", [], inv([])).hi, 10, "no model ids: cannot tell which model it runs");
   assert.equal(bounds(sonnetBreak, "app", [], inv(["claude-sonnet-4-6"], true)).hi, 10, "partly searched");
   assert.equal(bounds(sonnetBreak, "app", [], undefined).hi, 10, "no inventory at all (verify not run yet)");
   const confirmedOther = [ev({ checked: ["computer_20251124"], found: [{ term: "computer_20251124", file: "a.ts" }] })];
-  assert.equal(bounds(sonnetBreak, "app", confirmedOther, inv(["claude-sonnet-4-6"])).evidence, "confirmed", "a confirmed name keeps the band open");
+  assert.equal(bounds(sonnetBreak, "app", confirmedOther, inv(["claude-sonnet-5"])).evidence, "confirmed", "a confirmed name keeps the band open");
+  // B-50: under a closed scope that leaves out every model in use, the same hit is context only.
+  assert.equal(bounds(sonnetBreak, "app", confirmedOther, inv(["claude-sonnet-4-6"])).evidence, "other-models");
+});
+
+// B-50 (SU 1, SU 2): the scope check runs whenever the item names models, before keyword evidence.
+const effortItem = row({ source: "claude-code", type: "breaking-or-deprecation", risk: "behavior-change", title: "v2.1.280",
+  text: "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort over `/effort` in `-p` or the Agent SDK, a project, managed or `--settings` `effortLevel`, or a per-model level" });
+const effortHit = [ev({ checked: ["effortLevel"], found: [{ term: "effortLevel", file: "settings.json" }] })];
+
+test("B-50: a keyword hit on a change scoped to other models is context, not a confirmation (SU 1)", () => {
+  const b = bounds(effortItem, "app", effortHit, inv(["claude-opus-5-5"]));
+  assert.equal(b.evidence, "other-models");
+  assert.equal(b.hi, 7.9);
+  assert.deepEqual(b.foundIn, [], "no 'Found in' line");
+  assert.match(b.note, /applies when you move to claude-opus-4-7, claude-opus-4-8, claude-fable-5; this project uses claude-opus-5-5/);
+  assert.match(b.note, /`effortLevel` in settings\.json/, "the hit stays as a context line");
+});
+
+test("B-50: the same hit on a project using a named model stays confirmed (SU 2)", () => {
+  const b = bounds(effortItem, "app", effortHit, inv(["claude-opus-4-8"]));
+  assert.equal(b.evidence, "confirmed");
+  assert.equal(b.hi, 10);
+});
+
+test("B-50: open or unparsed wording never excludes; nor does a partial walk or a named family's alias", () => {
+  const open = row({ ...effortItem, text: "Changed Opus 4.7 and newer models to stop holding their launch-default effort over `effortLevel`" });
+  assert.equal(bounds(open, "app", effortHit, inv(["claude-opus-5-5"])).evidence, "confirmed", "Opus 4.7 and newer includes 5.5");
+  const range = row({ ...effortItem, text: "Changed Opus 4.7+ to stop holding `effortLevel`" });
+  assert.equal(bounds(range, "app", effortHit, inv(["claude-opus-5-5"])).evidence, "confirmed");
+  const including = row({ ...effortItem, text: "Changed several models, including Opus 4.7, to stop holding `effortLevel`" });
+  assert.equal(bounds(including, "app", effortHit, inv(["claude-opus-5-5"])).evidence, "confirmed");
+  assert.equal(bounds(effortItem, "app", effortHit, inv(["claude-opus-5-5"], true)).evidence, "confirmed", "partly searched");
+});
+
+test("B-50: a keyword hit where only an alias can reach the named models asks which model it runs, at soon (P-14)", () => {
+  const fable = { alias: "fable", family: "fable", file: "lenses/cold-read.md", line: 3 };
+  const opus = { alias: "opus", family: "opus", file: "lenses/redteam.md", line: 3 };
+  const setupLike = (aliases) => ({ app: { models: ["claude-opus-5-5"], aliases, partial: false } });
+  const b = bounds(effortItem, "app", effortHit, setupLike([opus, fable]));
+  assert.equal(b.evidence, "alias", "the fable alias may run Fable 5");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.deepEqual(b.foundIn, []);
+  assert.match(b.note, /your `fable` alias may have moved: confirm which model it runs \(lenses\/cold-read\.md:3\); `effortLevel` in settings\.json is not about these models/);
+  assert.equal(bounds(effortItem, "app", effortHit, setupLike([opus])).evidence, "other-models", "a pinned Opus id decides before the opus alias (B-39)");
+  const noPin = { app: { models: [], aliases: [opus], partial: false } };
+  assert.equal(bounds(effortItem, "app", effortHit, noPin).evidence, "alias", "aliases only");
+  assert.equal(bounds(effortItem, "app", [], noPin).evidence, "unchecked", "no hit: the alias state stays for breaking and deprecation risks");
+  const newer = row({ ...effortItem, text: "Changed Opus 4.7 and newer to stop holding `effortLevel`" });
+  const sonnetOnly = { app: { models: ["claude-opus-4-1"], aliases: [{ alias: "sonnet", family: "sonnet", file: "a.ts", line: 1 }], partial: false } };
+  assert.equal(bounds(newer, "app", effortHit, sonnetOnly).evidence, "confirmed", "'and newer' leaves the sonnet alias's family open");
+});
+
+test("B-50: a passing mention after the change's subject is not its scope (RF 2)", () => {
+  const b = bounds(sonnetBreak, "app", [], inv(["claude-opus-4-8"]));
+  assert.equal(b.evidence, "other-models");
+  assert.equal(b.hi, 7.9);
+  assert.match(b.note, /applies when you move to claude-sonnet-5, claude-sonnet-5-5/);
 });
 
 // B-39: aliases are recorded, never resolved (P-14). An alias user is exposed to launches and

@@ -106,6 +106,3 @@ export function launchStatus(refs, projectIds) {
 // Claude X", "Added Claude X", "Introducing Claude X". "Available for X" is not a launch (B-57, P-10).
 const LAUNCH = /\b(?:launch(?:ed|es|ing)?|[Aa]dd(?:ed|s|ing)|[Ii]ntroduc(?:ing|es|ed)|[Rr]eleas(?:ed|es|ing))\s+(?:the\s+new\s+|new\s+)?(?:Claude\s+)?(?:Opus|Sonnet|Haiku|Fable|Mythos)\s+\d/;
 export const isLaunchText = (text) => LAUNCH.test(String(text || ""));
-
-// The project's models that an item names (same family and version).
-export const scopeOverlap = (refs, projectIds) => parsed(projectIds).filter((p) => refs.some((r) => same(p, r))).map((p) => p.id);

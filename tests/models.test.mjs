@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseModel, modelRefs, launchStatus, scopeOverlap, isLaunchText } from "../scripts/lib/models.mjs";
+import { parseModel, modelRefs, launchStatus, isLaunchText } from "../scripts/lib/models.mjs";
 
 // B-57 (P-10): a launch is said with a launch verb next to the model's name, in one clause.
 test("isLaunchText: launch verbs next to a model name; 'available' and passing mentions are not launches", () => {
@@ -57,15 +57,6 @@ test("launchStatus: an older model of the same family = upgrade; another family 
   assert.equal(launchStatus([], ["claude-opus-4-8"]).status, "unknown", "a launch that names no model cannot be placed");
   // a newer model of the same family is not an upgrade target
   assert.equal(launchStatus(modelRefs("Claude Opus 4.8"), ["claude-opus-5-5"]).status, "other-models");
-});
-
-test("scopeOverlap: which of the item's models the project uses (same family and version)", () => {
-  const refs = modelRefs("Code written for Claude Sonnet 5 can break on Claude Sonnet 5.5. The advisor tool rejects Claude Opus 4.8.");
-  assert.deepEqual(scopeOverlap(refs, ["claude-opus-4-8", "claude-opus-5-5"]), ["claude-opus-4-8"]);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-4-6"]), []);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5"]), ["claude-sonnet-5"]);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-20260301"]), ["claude-sonnet-5"], "dated ids are read by family and version");
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-5"]), ["claude-sonnet-5-5"]);
 });
 
 test("launchStatus: a model listed as in use is never repeated as an older one", () => {
