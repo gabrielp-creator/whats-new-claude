@@ -28,6 +28,23 @@ const defence = (s) => String(s || "").replace(/[\p{Cf}\p{Zl}\p{Zp}]/gu, "").rep
 const oneLine = (s) => defence(s).replace(/\s+/g, " ").trim();
 const quote = (s) => defence(s).trim().split(/\r?\n/).map((l) => `> ${l}`).join("\n");
 
+// The heading says what changed: the title and the text, as show.mjs's headline() does (a release's
+// items share its title; a commit's subject is its title, its body may be only "Files: ..."), cut at
+// a word boundary and never inside a code span (B-46).
+const HEAD_MAX = 90;
+function heading(i) {
+  const t = oneLine(i.title), x = oneLine(i.text);
+  const h = !t ? x : !x || x.startsWith(t) ? x || t : `${t}: ${x}`;
+  if (h.length <= HEAD_MAX) return h;
+  let cut = h.slice(0, HEAD_MAX);
+  const space = cut.lastIndexOf(" ");
+  if (space > HEAD_MAX / 2) cut = cut.slice(0, space);
+  while ((cut.match(/`/g) || []).length % 2) cut = cut.slice(0, cut.lastIndexOf("`")).trimEnd();
+  return `${cut.replace(/[\s,;:]+$/, "")}...`;
+}
+// The quoted data: the title too, when the text does not already start with it.
+const quoted = (i) => (i.title && !oneLine(i.text).startsWith(oneLine(i.title)) ? `${quote(i.title)}\n>\n${quote(i.text)}` : quote(i.text));
+
 // Links come from fetched data, so only plain https links on the three source hosts are kept.
 // Shared with the page (inlined) and show.mjs.
 const LINK_HOSTS = new Set(["github.com", "platform.claude.com", "www.anthropic.com"]);
@@ -58,9 +75,9 @@ export function buildBrief(project, items, { date, dir, rootLabel = "your worksp
     const tags = [i.urgencyLabel, i.effect !== "none" ? i.effect : "", i.type, i.risk !== "none" ? `risk: ${i.risk}` : ""]
       .filter(Boolean).join(" · ");
     const link = safeUrl(i.url) || "(link removed: not a recognised source link)";
-    out.push("", `## ${n + 1}. ${oneLine(i.text).slice(0, 90)}`, "",
+    out.push("", `## ${n + 1}. ${heading(i)}`, "",
       `\`${oneLine(i.id).replace(/`/g, "'")}\` · ${oneLine(i.source)} · ${oneLine(i.date)} · ${tags}${i.fyiOnly ? " · third-party, FYI only" : ""}`,
-      `Source: ${link}`, "", quote(i.text));
+      `Source: ${link}`, "", quoted(i));
     if (flagged(i)) {
       out.push("", "Warning: this item contains instructions aimed at an AI. No prompt is given for it; read the source yourself.");
       return;

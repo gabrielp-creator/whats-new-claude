@@ -109,3 +109,42 @@ test("invisible and direction-changing characters are removed from headings and 
   const md = buildBrief("app", [it({ text: "Safe\u202e txet\u200b hidden\u2028line", id: "x\u2066:1" })], opts);
   assert.doesNotMatch(md, /[\u202e\u200b\u2028\u2066]/);
 });
+
+// B-46 (RF 5, SU 7): the heading says what changed (title and text, as headline() does), cut at a word
+// boundary outside code spans; the title stays inside the quoted data.
+const head = (md) => md.split("\n").find((l) => l.startsWith("## 1. "));
+test("B-46: a commit with no body is headed by its subject, not 'Files: ...' (RF 5)", () => {
+  const md = buildBrief("app", [it({ source: "skills", title: "Update claude-api skill: Claude Haiku 5.5 as the current Haiku", text: "Files: modified skills/claude-api/SKILL.md" })], opts);
+  assert.match(head(md), /^## 1\. Update claude-api skill: Claude Haiku 5\.5 as the current Haiku/);
+  assert.match(md, /^> Update claude-api skill: Claude Haiku 5\.5 as the current Haiku$/m, "the title is quoted as data too");
+  const bullet = buildBrief("app", [it({ source: "skills", title: "Update the skill", text: "* Update the skill\n* Add evals" })], opts);
+  assert.match(head(bullet), /^## 1\. Update the skill: \* Update the skill/, "a body starting with a bullet still leads with the subject");
+});
+
+test("B-46: a long heading is cut at a word boundary and never inside a code span (SU 7)", () => {
+  const text = "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort over `/effort` in `-p` or the Agent SDK";
+  const h = head(buildBrief("app", [it({ title: "v2.1.280", text })], opts)).slice("## 1. ".length);
+  assert.ok(h.length <= 93, h);
+  assert.equal((h.match(/`/g) || []).length % 2, 0, `unclosed backtick: ${h}`);
+  assert.match(h, /^v2\.1\.280: Changed Opus 4\.7/);
+  assert.match(h, /\S\.\.\.$/, "a cut heading says so");
+  assert.equal(head(buildBrief("app", [it({ title: "v2.1.290", text: "Fixed the Bash tool losing shell aliases." })], opts)), "## 1. v2.1.290: Fixed the Bash tool losing shell aliases.");
+});
+
+// B-41 (NC 6): the brief folder follows the project's own layout.
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { briefDirFor } from "../scripts/lib/paths.mjs";
+test("B-41: docs/ when it already holds briefs; docs/briefs/ when that exists or docs/ has none; briefs/ otherwise", () => {
+  const root = mkdtempSync(join(tmpdir(), "wnc-bd-"));
+  const make = (name, files) => { for (const f of files) { mkdirSync(join(root, name, f, ".."), { recursive: true }); if (!f.endsWith("/")) writeFileSync(join(root, name, f), "x"); } };
+  make("a", ["docs/discovery-brief-v2.md"]);
+  make("b", ["docs/notes.md"]);
+  make("c", ["docs/briefs/x.md", "docs/some-brief.md"]);
+  make("d", ["src/index.ts"]);
+  assert.equal(briefDirFor(root, "a"), "a/docs");
+  assert.equal(briefDirFor(root, "b"), "b/docs/briefs");
+  assert.equal(briefDirFor(root, "c"), "c/docs/briefs", "an existing docs/briefs/ wins");
+  assert.equal(briefDirFor(root, "d"), "d/briefs");
+});

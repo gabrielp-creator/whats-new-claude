@@ -8,6 +8,7 @@ import { join, resolve } from "node:path";
 import { dataDir, positional, writeJson } from "./lib/store.mjs";
 import { DEFAULT_BLOCKED } from "./lib/config.mjs";
 import { describe } from "./lib/describe.mjs";
+import { briefDirFor } from "./lib/paths.mjs";
 
 const DATA = dataDir();
 const [ROOT_ARG] = positional();
@@ -31,7 +32,7 @@ for (const name of readdirSync(ROOT).sort()) {
   let id = slug(name);
   for (let n = 2; used.has(id); n++) id = `${slug(name)}-${n}`;
   used.add(id);
-  projects.push({ id, path: name, description: describe(dir), briefDir: `${name}/${existsSync(join(dir, "docs")) ? "docs/briefs" : "briefs"}` });
+  projects.push({ id, path: name, description: describe(dir), briefDir: briefDirFor(ROOT, name) });
 }
 
 const draft = { workspaceRoot: ROOT, projects, blocked: [], notUsing: "", model: "sonnet", maxCallsWithoutAsking: 30 };
