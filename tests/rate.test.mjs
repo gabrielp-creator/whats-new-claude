@@ -328,7 +328,20 @@ test("B-33's other-models cap never applies when an alias of a named family is i
   assert.equal(bounds(sonnetBreak, "app", [], withAliases(["claude-haiku-4-5"], [])).evidence, "other-models", "control: without the alias it is capped");
   const b = bounds(sonnetBreak, "app", [], withAliases(["claude-haiku-4-5"], [sonnetAlias]));
   assert.notEqual(b.evidence, "other-models");
-  assert.equal(b.hi, 10);
+});
+
+test("a breaking change in an alias's family: alias, soon, never the open urgent band (M1 checkpoint)", () => {
+  const b = bounds(sonnetBreak, "app", [], withAliases(["claude-haiku-4-5"], [sonnetAlias]));
+  assert.equal(b.evidence, "alias");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.match(b.note, /your `sonnet` alias may have moved: confirm which model it runs \(scripts\/run\.mjs:14\)/);
+  const mentioned = bounds(sonnetBreak, "app", [ev({ checked: ["claude-sonnet-5"], found: [], mentioned: [{ term: "claude-sonnet-5", file: "docs/d.md" }] })], withAliases([], [sonnetAlias]));
+  assert.equal(mentioned.evidence, "alias", "a mention does not outrank the alias");
+  const confirmed = bounds(sonnetBreak, "app", [ev({ checked: ["claude-sonnet-5"], found: [{ term: "claude-sonnet-5", file: "a.ts" }] })], withAliases([], [sonnetAlias]));
+  assert.equal(confirmed.evidence, "confirmed", "a pinned id found in code still confirms");
+  assert.equal(confirmed.hi, 10);
+  const behavior = row({ ...sonnetBreak, risk: "behavior-change" });
+  assert.notEqual(bounds(behavior, "app", [], withAliases([], [sonnetAlias])).evidence, "alias", "only breaking and deprecation risks take the alias state");
 });
 
 // B-47: a name found only in docs, data records, tests or comments is "mentioned": context, not a

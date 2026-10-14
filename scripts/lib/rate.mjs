@@ -80,7 +80,8 @@ export function bounds(row, project, evs, models) {
       // No pinned id and no alias: which model it runs is unknown, never "other models" (B-39).
       evidence = "unknown"; note = "no model id or alias found in this project's code or config";
     }
-  } else if (row.risk === "deprecation" && exposed && evidence !== "confirmed") {
+  } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
+    // A retirement or breaking change in an alias's family: the alias may run the affected model.
     asAlias();
   } else if (!isLaunch(row) && refs.length && uses.length && evidence === "unchecked" && !aliases.some((a) => families.has(a.family)) && !scopeOverlap(refs, uses).length) {
     // A change scoped to models the project does not use matters when it moves to one of them (B-33).
