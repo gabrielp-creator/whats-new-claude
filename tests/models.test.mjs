@@ -59,10 +59,16 @@ test("launchStatus: an older model of the same family = upgrade; another family 
   assert.equal(launchStatus(modelRefs("Claude Opus 4.8"), ["claude-opus-5-5"]).status, "other-models");
 });
 
-test("launchStatus: a model listed as in use is never repeated as an older one", () => {
+// B-44 (RF 1): only the newest model named per family is the launch; a predecessor named for
+// comparison is an older model, never "adopted".
+test("launchStatus: the newest named model of a family is the launch; older named ones are upgrades from", () => {
   const refs = modelRefs("Claude Opus 5.5 replaces Claude Opus 5 as the default");
   assert.deepEqual(launchStatus(refs, ["claude-opus-5", "claude-opus-5-5", "claude-opus-4-8"]),
-    { status: "adopted", uses: ["claude-opus-5", "claude-opus-5-5"], older: ["claude-opus-4-8"] });
+    { status: "adopted", uses: ["claude-opus-5-5"], older: ["claude-opus-5", "claude-opus-4-8"] });
+  const price = modelRefs("We've launched Claude Opus 5.5 (claude-opus-5-5) at $4 / $20 USD per MTok (Claude Opus 5 is $5 / $25)");
+  assert.deepEqual(launchStatus(price, ["claude-opus-5"]), { status: "upgrade", uses: ["claude-opus-5"], older: ["claude-opus-5"] });
+  const skill = modelRefs("Make Claude Opus 5.5 (`claude-opus-5-5`) the default model, with Claude Opus 5 as the previous Opus");
+  assert.equal(launchStatus(skill, ["claude-opus-5"]).status, "upgrade");
 });
 
 test("isLaunchText: a commit's 'Add Claude X' and 'Make Claude X the default' are launch templates (B-57)", () => {

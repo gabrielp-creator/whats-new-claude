@@ -576,3 +576,14 @@ test("B-57: the price note cites an alias in code before one in front matter", (
   const b = bounds(cachePrice, "app", [], used([], { aliases: [{ alias: "sonnet", family: "sonnet", file: ".claude/lenses/l.md", line: 3 }, { alias: "sonnet", family: "sonnet", file: "scripts/run.mjs", line: 14 }] }));
   assert.match(b.note, /\(scripts\/run\.mjs:14\)/);
 });
+
+test("B-44: a launch naming its predecessor for comparison is an upgrade for the predecessor's users, band open (RF 1)", () => {
+  const opusLaunch = row({ type: "model", risk: "none", text: "We've launched Claude Opus 5.5 (claude-opus-5-5), at $4 / $20 USD per MTok (Claude Opus 5 is $5 / $25)." });
+  const b = bounds(opusLaunch, "app", [], inv(["claude-opus-5"]));
+  assert.equal(b.evidence, "upgrade");
+  assert.equal(b.hi, 10);
+  assert.match(b.note, /upgrade from claude-opus-5/);
+  const both = bounds(opusLaunch, "app", [], inv(["claude-opus-5", "claude-opus-5-5"]));
+  assert.equal(both.evidence, "adopted", "mixed ids still count as adopted (Gabriel, 2026-10-09)");
+  assert.match(both.note, /already uses claude-opus-5-5 \(also claude-opus-5\)/);
+});

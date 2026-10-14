@@ -96,7 +96,9 @@ export function launchStatus(refs, projectIds) {
   const newest = new Map();
   for (const r of refs) if (!newest.has(r.family) || cmp(r, newest.get(r.family)) > 0) newest.set(r.family, r);
   const older = proj.filter((p) => newest.has(p.family) && cmp(p, newest.get(p.family)) < 0).map((p) => p.id);
-  const uses = proj.filter((p) => refs.some((r) => same(p, r))).map((p) => p.id);
+  // Only the newest model named per family is the launch: "Opus 5.5 (Opus 5 is $5 / $25)" launches
+  // 5.5, and a project on Opus 5 is an upgrade candidate, not an adopter (B-44, RF 1).
+  const uses = proj.filter((p) => newest.has(p.family) && same(p, newest.get(p.family))).map((p) => p.id);
   if (uses.length) return { status: "adopted", uses, older: older.filter((id) => !uses.includes(id)) };
   if (older.length) return { status: "upgrade", uses: older, older };
   return { status: "other-models", uses: [], older: [] };
