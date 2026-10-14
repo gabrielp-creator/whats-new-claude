@@ -68,6 +68,10 @@
   when every call found turns it off with literal arguments and the project's `.claude` folder does
   not switch it on; arguments from a variable, a spread, a condition or `"$@"` make it unknown. Each
   entry lists the file and line of every call.
+- The file check reads the installed Claude Code version with `claude --version`, run locally from the
+  plugin's own folder (it sends nothing and is not a model call), and records it per project in
+  `profile.json`. Output that is not a version records none. A project that depends on the Agent SDK
+  runs the CLI the SDK bundles, so its version is recorded as unknown.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each

@@ -22,6 +22,7 @@ import { useIndex, lookup } from "./lib/use.mjs";
 import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
+import { readVersion, versionFor } from "./lib/version.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -51,11 +52,18 @@ function projectFiles(p) {
 const { items, rows } = loadRows(DATA, { evidence: false });
 const runs = releaseRuns(items);
 const indexes = new Map(), partial = new Set(), models = {}, profiles = {};
+// The installed Claude Code version (B-52), local and free; none unless it parses.
+const installed = readVersion();
+console.log(installed.version ? `Claude Code ${installed.version} (${installed.how})` : `Claude Code version unknown (${installed.how})`);
 for (const p of config.projects) {
   const found = projectFiles(p);
   const files = found?.files;
   const claudeRoot = p.id === "setup" && !p.path;
-  if (found) profiles[p.id] = buildProfile(found.root, files, { claudeRoot });
+  if (found) {
+    profiles[p.id] = buildProfile(found.root, files, { claudeRoot });
+    const version = versionFor(profiles[p.id], installed);
+    profiles[p.id].claudeCode = { version, how: version ? installed.how : installed.version ? "runs the CLI bundled with the Agent SDK" : installed.how };
+  }
   const archives = files ? archiveFiles(files, runs, { claudeRoot }) : [];
   const ix = files && useIndex(files, { claudeRoot, archives: new Set(archives.map((a) => a.file)) });
   if (ix) indexes.set(p.id, ix);

@@ -97,7 +97,8 @@ in code. Plain-language rewrites on the page run only when you click for them.
 - **Reads locally**: your project folders and your `~/.claude` config files (not transcripts), for the
   file check. File contents never leave your machine. Since 0.3.1 it also reads `settings.local.json`,
   in memory and for a fixed set of facts only (hook events and types, the tool names in permission
-  rules, `defaultMode`, the sandbox), never rule text, hook commands or environment values.
+  rules, `defaultMode`, the sandbox), never rule text, hook commands or environment values, and runs
+  `claude --version` locally to learn your Claude Code version.
 - **Writes**: its own data folder (`~/.claude/plugins/data/...`), your private review page, and, when
   you ask, brief files inside your workspace (never into `.git`, `node_modules`, `.claude`, `dotfiles`
   or folders you block, checked on disk so links and short names cannot get around it; never

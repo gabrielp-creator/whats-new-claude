@@ -27,6 +27,8 @@ token, it is sent only to `api.github.com`.
   whether a skill or command file runs inline shell (`` !` ``), and the Anthropic package names in your
   manifests. Environment values, rule text, hook commands and prompts, and plugin and MCP server names
   are never kept or sent.
+- **Your installed Claude Code version**, by running `claude --version` on your computer (it sends
+  nothing), and, in code that calls the `claude` CLI, which features those calls switch off.
 - **Never opened:** environment and credential files (`.env*`, `credentials*`, `*secret*`, service
   account files, `.mcp.json`, private keys, `.npmrc`, `.netrc`, `.pypirc`, `token.json`).
 - **At setup**, the first line of each project's `package.json`, `README.md` or `CLAUDE.md`, to draft
