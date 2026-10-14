@@ -30,8 +30,9 @@
   front matter, `--model`, `ANTHROPIC_MODEL` or a `model` setting). Aliases are recorded, never
   resolved: a launch or retirement in an alias's family is rated in the soon band with "your `sonnet`
   alias may have moved: confirm which model it runs", and the file and line. A launch for a project
-  with no model id and no alias is "model not known", no longer capped as "not found". The setup
-  check also reads `~/.claude/lenses`.
+  with no model id and no alias is "model not known", no longer capped as "not found". A breaking
+  change in an alias's family gets the same "confirm which model it runs" note in the soon band,
+  rather than reopening the urgent band. The setup check also reads `~/.claude/lenses`.
 - A code or config file that quotes prose (runs of 8 or more words) from 3 or more release items is
   read as a release archive: its names are mentions, never confirmations. One copied snippet still
   counts, identifiers count as one word, and phrases shared by more than two items are ignored. Each
