@@ -10,6 +10,9 @@ export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
 export const NOT_FOUND_CAP = 7.9; // keeps an item that names files we could not find out of the 8+ list
 export const ADOPTED_CAP = 5;     // a launch the project already uses: still listed, never a top pick (Gabriel, 2026-10-09)
+export const NOT_USED_TRIPWIRE_CAP = 6.9; // a tripwire item not used here: soon (P-4), out of the 7+ list (RF 3)
+const AGREE = { "breaking-or-deprecation": ["breaking", "deprecation"], security: ["security"] };
+const lensesAgree = (row) => (AGREE[row.type] || []).includes(row.risk);
 export const ACTIONS = new Set(["model-refresh", "claude-md-rule", "try-feature", "update-harness", "update-code", "read", "ignore"]);
 const STRENGTH_AT = { high: 0.75, medium: 0.5, low: 0.25 };
 const WHY_MAX = 160;
@@ -118,10 +121,18 @@ export function bounds(row, project, evs, models) {
   const uses = inv?.models || [];
   const refs = inv ? modelRefs(`${row.title || ""} ${row.text || ""}`) : [];
   const mentionedIn = e?.mentioned || [];
-  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false;
+  let evidence = "unchecked", foundIn = [], note = "", verdict = null, kind = null, priceOnly = false, fresh = false, due = false;
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
-  else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
+  else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) {
+    evidence = "not-found";
+    // B-53 (SU 11): a name the item says was just added is absent by definition until adopted, so an
+    // item that adds one is neutral here, whatever else it changes (keyed on the text's own "Added",
+    // not on the type lens, P-11).
+    const files = e.checked.filter((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file");
+    fresh = files.some((t) => new RegExp(`\\b(?:[Aa]dd(?:ed|s)?|[Nn]ew|[Ii]ntroduc(?:ed|es|ing))\\b[^.;]*?${t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(`${row.title || ""} ${row.text || ""}`));
+    if (fresh) note = "new: not used here yet"; else hi = Math.min(hi, NOT_FOUND_CAP);
+  }
   else if (inv?.partial) { evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit"; }
 
   // What the item is on (B-34), for anything but a launch, and the project's pinned models inside it,
@@ -131,7 +142,8 @@ export function bounds(row, project, evs, models) {
   const inUse = scope ? (inv.used || uses.map((id) => ({ id }))).filter((u) => inScope(scope, u.id) === "in") : [];
   const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
   const named = (u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`;
-  const lower = (band) => { if (BANDS[band][1] < hi) [lo, hi] = BANDS[band]; }; // never raises the lenses' band
+  // Into a lower band, keeping any cap already set; never raises the lenses' band.
+  const lower = (band) => { lo = Math.min(lo, BANDS[band][0]); hi = Math.min(hi, BANDS[band][1]); };
   // B-4: the project's pinned models that have a retirement date (verify.mjs, from the deprecations
   // page). Moving off one of them is urgent, with the date.
   const retiring = (ids) => (inv?.retiring || []).filter((r) => r.state === "deprecated" && r.retires && ids.includes(r.id));
@@ -169,7 +181,7 @@ export function bounds(row, project, evs, models) {
     } else if (l.status === "upgrade") {
       evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`;
       const r = retiring(l.uses);
-      if (r.length) { [lo, hi] = BANDS.urgent; note += `; ${retires(r)}`; } // AK 2
+      if (r.length) { [lo, hi] = BANDS.urgent; due = true; note += `; ${retires(r)}`; } // AK 2
     } else if (exposed) {
       asAlias();
     } else if (inv.partial) {
@@ -227,7 +239,7 @@ export function bounds(row, project, evs, models) {
     }
     // B-4: on a model that is retiring, the move is due anyway: urgent, with the date.
     const r = retiring(inUse.map((u) => u.id));
-    if (r.length) { [lo, hi] = BANDS.urgent; note += `; ${retires(r)}`; }
+    if (r.length) { [lo, hi] = BANDS.urgent; due = true; note += `; ${retires(r)}`; }
   } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
     // A retirement or breaking change in an alias's family: the alias may run the affected model.
     asAlias();
@@ -245,6 +257,19 @@ export function bounds(row, project, evs, models) {
       evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
       note = `applies when you move to ${list(verdict.names)}; this project uses ${list(uses)}${context}`;
     }
+  }
+  // B-36: the band follows this project's evidence, not only the lenses' reading of its description.
+  // A launch is no more than an upgrade (soon) unless the model it replaces is retiring (B-4). Not used
+  // here (not found, or a closed scope of other models) drops to later; a security, breaking,
+  // deprecation or retirement item stays in soon, below the 7+ list (P-4, RF 3). The breaking floor
+  // and the exposed tiers hold only with a confirmation here and type and risk lenses that agree
+  // (P-11); else the exposure tier, soon.
+  if (!row.codeMade && !due) {
+    if (isLaunch(row) && ["upgrade", "unknown", "incomplete"].includes(evidence)) lower("soon");
+    if (evidence === "other-models" || (evidence === "not-found" && !fresh)) {
+      if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); } else lower("later");
+    }
+    if ((row.urgencyBy === "floor" || row.urgencyBy === "exposed") && !(evidence === "confirmed" && lensesAgree(row))) lower("soon");
   }
   // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
   // project gets "read" at most, in the later band. A skill's default never moves an alias, so skill

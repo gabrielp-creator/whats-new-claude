@@ -28,12 +28,13 @@ test("B-61: in a project whose code calls claude, flags are file terms; slash co
 });
 
 test("B-61: a flag absent from code that calls claude is not-found, kept out of 8+ (LCW 4)", () => {
-  const item = row({ urgencyLabel: "urgent", text: "Added `--bare` to skip hooks, skills and plugins" });
+  // The real item text (claude-code:v2.1.286:54). An "Added" flag would be B-53 neutral instead.
+  const item = row({ urgencyLabel: "urgent", text: "Changed `--bare` to connect only the MCP servers named on the command line, send the model no system reminders, and start no background tasks" });
   const evs = [ev({ checked: ["--bare"], found: [] })];
   const calls = { app: { models: [], aliases: [], claudeCalls: [{ file: "scripts/run.mjs", line: 75 }], partial: false } };
   const b = bounds(item, "app", evs, calls);
   assert.equal(b.evidence, "not-found");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, BANDS.later[1], "B-36: not found drops to later");
   const noCalls = bounds(item, "app", evs, { app: { models: [], aliases: [], claudeCalls: [], partial: false } });
   assert.equal(noCalls.evidence, "unchecked", "no claude call: a flag is typed, its absence says nothing");
   assert.equal(noCalls.hi, 10);
@@ -48,7 +49,7 @@ test("third-party and fork items are capped at 6.9 whatever the tier", () => {
 test("not found caps at 7.9 when a file-kind name was checked across the whole project", () => {
   const b = bounds(row(), "app", [ev({ checked: ["claude-opus-4-1"], found: [] })]);
   assert.equal(b.evidence, "not-found");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, BANDS.later[1], "B-36: not found drops to later");
 });
 
 test("not found never caps for typed names only, for partly searched projects, or for unchecked ones", () => {
@@ -103,7 +104,7 @@ test("rateRow: one rating per project, headline is the best, orchestrator answer
   const out = rateRow(r, evs, orch);
   const app = out.ratings.find((x) => x.project === "app"), site = out.ratings.find((x) => x.project === "site");
   assert.equal(app.score, 9.4);
-  assert.equal(site.score, 7.9, "the not-found cap holds even if the model says 9.9");
+  assert.equal(site.score, BANDS.later[1], "the not-found band holds even if the model says 9.9 (B-36: later)");
   assert.equal(out.rating, 9.4);
   assert.equal(out.ratingProject, "app");
   assert.equal(app.provisional, false);
@@ -225,21 +226,21 @@ test("launch already adopted: capped near 5, older ids in use named", () => {
 test("launch with an older model of the same family: upgrade candidate, band open even though the new id is not found", () => {
   const b = bounds(launch, "app", missOpus, inv(["claude-opus-4-8", "claude-haiku-4-5", "claude-sonnet-4-6"]));
   assert.equal(b.evidence, "upgrade");
-  assert.equal(b.hi, 10);
+  assert.equal(b.hi, BANDS.soon[1], "B-36: an upgrade is soon");
   assert.match(b.note, /upgrade from claude-opus-4-8/);
 });
 
 test("launch for a project on another family only: capped at 7.9 (same family only, Gabriel 2026-10-09)", () => {
   const b = bounds(launch, "app", missOpus, inv(["claude-sonnet-4-6"]));
   assert.equal(b.evidence, "other-models");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, BANDS.later[1], "B-36: other models drop to later");
   assert.match(b.note, /claude-sonnet-4-6/);
 });
 
 test("launch for a project with no model id and no alias: unknown, never capped (B-39: absence is unknown)", () => {
   const b = bounds(launch, "app", missOpus, inv([]));
   assert.equal(b.evidence, "unknown");
-  assert.equal(b.hi, 10);
+  assert.equal(b.hi, BANDS.soon[1], "B-36: a launch is no more than an upgrade");
   assert.match(b.note, /no model id or alias found/);
 });
 
@@ -247,7 +248,7 @@ test("partly searched project: a found model still counts, an absent one is 'fil
   assert.equal(bounds(launch, "app", foundOpus, inv(["claude-opus-5-5"], true)).evidence, "adopted");
   const b = bounds(launch, "app", [ev({ checked: [], found: [] })], inv(["claude-sonnet-4-6"], true));
   assert.equal(b.evidence, "incomplete");
-  assert.equal(b.hi, 10);
+  assert.equal(b.hi, BANDS.soon[1], "B-36: a launch is no more than an upgrade");
   assert.match(b.note, /incomplete/);
 });
 
@@ -258,7 +259,7 @@ test("retirements keep today's behaviour: found = confirmed (open), not found = 
   assert.equal(hit.hi, 10);
   const miss = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"]));
   assert.equal(miss.evidence, "not-found");
-  assert.equal(miss.hi, 7.9);
+  assert.equal(miss.hi, 6.9, "B-36: a tripwire item not used here stays in soon, below 7");
   // a model item whose risk is a deprecation is a retirement, not a launch
   const modelRetire = row({ ...retire, type: "model" });
   assert.equal(bounds(modelRetire, "app", [ev({ checked: ["claude-sonnet-4-5"], found: [{ term: "claude-sonnet-4-5", file: "a.ts" }] })], inv(["claude-sonnet-4-5"])).evidence, "confirmed");
@@ -270,7 +271,7 @@ const sonnetBreak = row({ type: "breaking-or-deprecation", risk: "breaking",
 test("B-33: a change scoped to models the project does not use is capped at 7.9 and says when it applies", () => {
   const b = bounds(sonnetBreak, "app", [], inv(["claude-sonnet-4-6"]));
   assert.equal(b.evidence, "other-models");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, 6.9, "B-36: a tripwire item not used here stays in soon, below 7");
   assert.match(b.note, /claude-sonnet-5-5/);
 });
 
@@ -294,7 +295,7 @@ const effortHit = [ev({ checked: ["effortLevel"], found: [{ term: "effortLevel",
 test("B-50: a keyword hit on a change scoped to other models is context, not a confirmation (SU 1)", () => {
   const b = bounds(effortItem, "app", effortHit, inv(["claude-opus-5-5"]));
   assert.equal(b.evidence, "other-models");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, 6.9, "B-36: a tripwire item not used here stays in soon, below 7 (P-4)");
   assert.deepEqual(b.foundIn, [], "no 'Found in' line");
   assert.match(b.note, /applies when you move to claude-opus-4-7, claude-opus-4-8, claude-fable-5; this project uses claude-opus-5-5/);
   assert.match(b.note, /`effortLevel` in settings\.json/, "the hit stays as a context line");
@@ -337,7 +338,7 @@ test("B-50: a keyword hit where only an alias can reach the named models asks wh
 test("B-50: a passing mention after the change's subject is not its scope (RF 2)", () => {
   const b = bounds(sonnetBreak, "app", [], inv(["claude-opus-4-8"]));
   assert.equal(b.evidence, "other-models");
-  assert.equal(b.hi, 7.9);
+  assert.equal(b.hi, 6.9, "B-36: a tripwire item not used here stays in soon, below 7");
   assert.match(b.note, /applies when you move to claude-sonnet-5, claude-sonnet-5-5/);
 });
 
@@ -422,7 +423,7 @@ test("rateRow carries the note and the new caps through to each project's rating
   assert.equal(s.score, 5);
   assert.equal(s.evidence, "adopted");
   assert.match(s.note, /already uses/);
-  assert.equal(n.score, 9);
+  assert.equal(n.score, BANDS.soon[1], "B-36: an upgrade tops out at soon");
   assert.equal(n.evidence, "upgrade");
   assert.equal(out.ratingProject, "app2", "the upgrade candidate now leads, not the project that already moved");
   const p = ratePayload(r, evs, models).projects.find((x) => x.id === "app2");
@@ -435,7 +436,7 @@ import { seenFor, staleRating } from "../scripts/lib/rate.mjs";
 
 test("seenFor records each project's range and evidence as the orchestrator saw them", () => {
   const r = { ...launch, projects: ["app"] };
-  assert.deepEqual(seenFor(r, missOpus, inv(["claude-opus-4-8"])), { app: [7, 10, "upgrade"] });
+  assert.deepEqual(seenFor(r, missOpus, inv(["claude-opus-4-8"])), { app: [5, 8.4, "upgrade"] });
 });
 
 test("staleRating: same range and evidence = fresh; a changed range or evidence = stale", () => {
@@ -581,7 +582,7 @@ test("B-44: a launch naming its predecessor for comparison is an upgrade for the
   const opusLaunch = row({ type: "model", risk: "none", text: "We've launched Claude Opus 5.5 (claude-opus-5-5), at $4 / $20 USD per MTok (Claude Opus 5 is $5 / $25)." });
   const b = bounds(opusLaunch, "app", [], inv(["claude-opus-5"]));
   assert.equal(b.evidence, "upgrade");
-  assert.equal(b.hi, 10);
+  assert.equal(b.hi, BANDS.soon[1], "B-36: an upgrade is soon");
   assert.match(b.note, /upgrade from claude-opus-5/);
   const both = bounds(opusLaunch, "app", [], inv(["claude-opus-5", "claude-opus-5-5"]));
   assert.equal(both.evidence, "adopted", "mixed ids still count as adopted (Gabriel, 2026-10-09)");
@@ -683,4 +684,59 @@ test("B-4: a breaking note on a retiring model in use is urgent with the date, e
   assert.equal(b.evidence, "confirmed");
   assert.deepEqual([b.lo, b.hi], BANDS.urgent);
   assert.match(b.note, /claude-sonnet-4-5 retires on 2026-11-30/);
+});
+
+// B-36 (AK 1, RF 3, SU 6, LNC 8) and B-53 (SU 11): bands follow the project's evidence.
+test("B-36: an upgrade launch is soon, never urgent, unless the old model is retiring (AK 1)", () => {
+  const sonnet55 = row({ type: "model", risk: "none", urgencyLabel: "urgent", urgencyBy: "model", text: "We've launched Claude Sonnet 5.5 (claude-sonnet-5-5)." });
+  const b = bounds(sonnet55, "app", [], onSonnet45([]));
+  assert.equal(b.evidence, "upgrade");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.deepEqual([bounds(sonnet55, "app", [], onSonnet45([retiringSonnet])).lo], [BANDS.urgent[0]], "B-4: urgent with the date");
+  const other = bounds(sonnet55, "app", [], { app: { models: ["claude-opus-4-8"], aliases: [], partial: false } });
+  assert.equal(other.evidence, "other-models");
+  assert.deepEqual([other.lo, other.hi], BANDS.later, "another family only");
+  assert.deepEqual([bounds(sonnet55, "app", [], { app: { models: [], aliases: [], partial: false } }).hi], [BANDS.soon[1]], "no model found: no more than an upgrade");
+});
+
+test("B-36: not found or other models drops to later; a tripwire item stays in soon below 7 (RF 3, SU 6, P-4)", () => {
+  const plain = bounds(row({ type: "improvement", risk: "none" }), "app", [ev({ checked: ["fooBarSetting"], found: [] })]);
+  assert.equal(plain.evidence, "not-found");
+  assert.deepEqual([plain.lo, plain.hi], BANDS.later);
+  const retire = row({ type: "breaking-or-deprecation", risk: "deprecation", urgencyBy: "floor", text: "Claude Sonnet 4.5 (`claude-sonnet-4-5-20250929`) retires on 2026-11-30" });
+  const rf3 = bounds(retire, "app", [ev({ checked: ["claude-sonnet-4-5-20250929"], found: [] })], inv(["claude-opus-4-8"]));
+  assert.equal(rf3.evidence, "not-found");
+  assert.deepEqual([rf3.lo, rf3.hi], [5, 6.9], "soon, below the 7+ list");
+  const su6 = bounds({ ...sonnetBreak, urgencyBy: "floor" }, "app", [], inv(["claude-sonnet-4-6"]));
+  assert.equal(su6.evidence, "other-models");
+  assert.deepEqual([su6.lo, su6.hi], [5, 6.9], "no 80 floor for models the project does not use");
+});
+
+test("B-36: the breaking floor and exposed tiers need evidence and agreeing lenses, else soon (LNC 8, P-11)", () => {
+  const security = row({ type: "security", risk: "security", urgencyLabel: "urgent", urgencyBy: "exposed", text: "Fixed a sandbox escape" });
+  const unchecked = rateRow({ ...security, projects: ["app"] }, [], { id: "x:1", ratings: [{ project: "app", score: 6, do: "read", why: "w" }] }, undefined).ratings[0];
+  assert.deepEqual([unchecked.lo, unchecked.hi, unchecked.score], [5, 8.4, 6], "LNC 8: the 60 tier, score 6");
+  const confirmed = bounds(security, "app", [ev({ checked: ["sandbox"], found: [{ term: "sandbox enabled", file: "settings.json" }] })]);
+  assert.deepEqual([confirmed.lo, confirmed.hi], BANDS.urgent, "evidence and agreement keep it urgent");
+  const split = bounds({ ...security, type: "bug-fix" }, "app", [ev({ checked: ["sandbox"], found: [{ term: "sandbox enabled", file: "settings.json" }] })]);
+  assert.deepEqual([split.lo, split.hi], BANDS.soon, "the type lens disagrees");
+  const brk = row({ type: "breaking-or-deprecation", risk: "behavior-change", urgencyBy: "floor", text: "Changed `fooMode` to default off" });
+  const lnc8 = rateRow({ ...brk, projects: ["app"] }, [ev({ checked: ["fooMode"], found: [] })], { id: "x:1", ratings: [{ project: "app", score: 5, do: "ignore", why: "w" }] }, undefined).ratings[0];
+  assert.ok(lnc8.score <= 5.9, `LNC 8: ${lnc8.score}`);
+});
+
+test("B-53: a new feature's own name absent is neutral, no cap and no drop (SU 11)", () => {
+  const added = row({ type: "new-capability", risk: "none", urgencyLabel: "soon", text: "Added `onFailure: \"block\"` to command hooks so a failing hook can stop the turn" });
+  const b = bounds(added, "app", [ev({ checked: ["onFailure"], found: [] })]);
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.match(b.note, /new: not used here yet/);
+  const fix = row({ type: "bug-fix", risk: "none", urgencyLabel: "soon", text: "Fixed `onFailure` hooks running twice" });
+  assert.deepEqual([bounds(fix, "app", [ev({ checked: ["onFailure"], found: [] })]).hi], [BANDS.later[1]], "not an Added term: absence still drops");
+});
+
+test("B-53: an item that adds a feature stays neutral when it also changes a name the project lacks", () => {
+  const mixed = row({ type: "new-capability", risk: "none", urgencyLabel: "soon",
+    text: "Added `PreModelSwitch` and `PostModelSwitch` hook events (block, confirm, or annotate a model switch); `SessionStart` resume hooks now receive session staleness" });
+  const b = bounds(mixed, "app", [ev({ checked: ["PreModelSwitch", "PostModelSwitch", "SessionStart"], found: [] })]);
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
 });

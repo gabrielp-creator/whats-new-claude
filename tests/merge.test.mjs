@@ -113,3 +113,11 @@ test("a confirmed item's +2 never moves it into another tier", async () => {
     assert.equal(labelFor(m.urgency + 2), m.urgencyLabel, `${e}/${s}/${t}/${r}/${exposed}/${nw} urgency ${m.urgency}`);
   }
 });
+
+test("B-36: merge records which rule set the urgency (urgencyBy)", () => {
+  assert.equal(urg({ effect: "fixes", strength: "low" }, {}, { risk: "security", exposed: true }).urgencyBy, "exposed");
+  assert.equal(urg({ effect: "fixes", strength: "low" }, { type: "breaking-or-deprecation" }, {}).urgencyBy, "floor");
+  assert.equal(urg({ effect: "fixes", strength: "low" }, { type: "model" }, {}).urgencyBy, "model");
+  assert.equal(urg({ effect: "fixes", strength: "high" }, {}, {}).urgencyBy, "effect");
+  assert.equal(urg({}, {}, {}).urgencyBy, "none");
+});

@@ -20,14 +20,18 @@ export function tripwireLabel(pattern) {
 // Urgency: how soon the user should look. Exposed breakage first, then security, model and
 // deprecation events that touch their work, then behaviour changes and strong effects.
 const EXPOSED = { breaking: 100, deprecation: 95, security: 90, "behavior-change": 60 };
+// by: the rule that set the tier, so rate.mjs can hold the floor and the exposed tiers to the
+// project's evidence (B-36, P-11).
 function urgencyOf({ exposed, risk, type, hasEffect, strength, newWork, tripwire, serious }) {
-  let u = exposed ? EXPOSED[risk] : 0;
-  if (hasEffect && type === "model") u = Math.max(u, 85);
-  if (hasEffect && (type === "breaking-or-deprecation" || type === "security")) u = Math.max(u, 80);
-  if (hasEffect) u = Math.max(u, { high: 55, medium: 35, low: 15 }[strength]);
-  if (newWork || serious) u = Math.max(u, 10);
-  if (tripwire) u = Math.max(u, 5);
-  return u + (hasEffect ? STRENGTH[strength] : 0); // strength breaks ties inside a tier
+  let u = 0, by = "none";
+  const raise = (v, why) => { if (v > u) { u = v; by = why; } };
+  if (exposed) raise(EXPOSED[risk] || 0, "exposed");
+  if (hasEffect && type === "model") raise(85, "model");
+  if (hasEffect && (type === "breaking-or-deprecation" || type === "security")) raise(80, "floor");
+  if (hasEffect) raise({ high: 55, medium: 35, low: 15 }[strength], "effect");
+  if (newWork || serious) raise(10, "minimum");
+  if (tripwire) raise(5, "tripwire");
+  return { u: u + (hasEffect ? STRENGTH[strength] : 0), by }; // strength breaks ties inside a tier
 }
 
 export const labelFor = (u) => (u >= 80 ? "urgent" : u >= 50 ? "soon" : u >= 10 ? "later" : "none");
@@ -56,12 +60,12 @@ export function merge(item, impact, type, risk) {
   // "none" band, whatever the lenses answered: one injected item in a batch could otherwise steer it
   // there (B-66). "removed" and "renamed" match incidentally too often to count.
   const serious = !fyiOnly && tripwires.some((t) => SERIOUS.has(t));
-  const urgency = urgencyOf({ exposed, risk: risk.risk, type: type.type, hasEffect, strength: impact.strength,
+  const { u: urgency, by: urgencyBy } = urgencyOf({ exposed, risk: risk.risk, type: type.type, hasEffect, strength: impact.strength,
     newWork: impact.new_work, tripwire: tripwires.length > 0, serious });
   const urgencyLabel = labelFor(urgency);
 
   return {
-    section, urgency, urgencyLabel, action, fyiOnly, flags, tripwires,
+    section, urgency, urgencyLabel, urgencyBy, action, fyiOnly, flags, tripwires,
     effect: impact.effect, projects: impact.projects, newWork: impact.new_work, strength: impact.strength,
     why: impact.why, type: type.type, risk: risk.risk, riskExposed: risk.exposed, riskWhy: risk.why,
   };
