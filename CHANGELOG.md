@@ -118,6 +118,17 @@
   is where a project already keeps them.
 - Each rating is stamped with the plugin version. Ratings made before 0.3.1 are marked "rated before
   0.3.1" and redone on your next run, counted in the same cost question, never as new items.
+- Fixes from the release review: fork and third-party items never get a file check, so their text
+  cannot learn which names your files hold. A `claude -p` command built by joining strings (`+`, an
+  f-string, `.format`, `%`) or with an unquoted shell variable counts as not fully known, so nothing is
+  taken as switched off. Model ranges such as "Opus 4.8 and 5 and newer", "onwards", "and up" and
+  "starting with" no longer read as closed. In a brief, a source of the same launch that is not tied
+  to the project adds its link but never decides the entry. A security item held for a project keeps
+  its note even when the impact review saw no effect. A name found but set aside by the model scope
+  shows as mentioned, not "not seen". A pinned dated snapshot matches its own row on the deprecations
+  page. A command or skill whose name contains a word like "security" no longer makes items naming it
+  a tripwire. A plugin whose name is not a plain short name gets a neutral title, its name kept in the
+  quoted text. `claude --version` refuses a path the Windows shell would change.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
