@@ -11,7 +11,7 @@ const CONFIG = /(^|\/)(package\.json|settings(\.[\w-]+)?\.json)$|\.toml$|(^|\/)\
 const FRONT_MATTER = /(^|\/)\.claude\/(agents|commands|lenses|skills)\/.+\.md$/i;
 // Tests, fixtures, proofs, smoke checks and logs assert or record names; they do not run them.
 const NOT_OWN = /(^|\/)(tests?|__tests__|specs?|e2e|fixtures?|__fixtures__|__mocks__|testdata|proofs?|logs?)\/|\.(test|spec)\.[a-z]+$|(^|\/)test_[^/]*\.py$|_test\.py$|(^|\/|[._-])(proof|smoke)([._-][^/]*)?\.[a-z]+$/i;
-// A line whose first characters open a comment (DECIDED (unratified), Claude, P-31). "--" counts only
+// A line whose first characters open a comment; a trailing comment on a code line stays code. "--" counts only
 // before a space, so a shell continuation line such as "  --model sonnet \" stays code.
 const COMMENT = /^\s*(\/\/|#|\*|\/\*|--(\s|$)|<!--)/;
 
