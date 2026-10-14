@@ -28,9 +28,9 @@ const defence = (s) => String(s || "").replace(/[\p{Cf}\p{Zl}\p{Zp}]/gu, "").rep
 const oneLine = (s) => defence(s).replace(/\s+/g, " ").trim();
 const quote = (s) => defence(s).trim().split(/\r?\n/).map((l) => `> ${l}`).join("\n");
 
-// The heading says what changed: the title and the text, as show.mjs's headline() does (a release's
-// items share its title; a commit's subject is its title, its body may be only "Files: ..."), cut at
-// a word boundary and never inside a code span (B-46).
+// What changed: the title and the text, as show.mjs's headline() does (a release's items share its
+// title; a commit's subject is its title, its body may be only "Files: ..."), cut at a word boundary
+// and never inside a code span (B-46).
 const HEAD_MAX = 90;
 function heading(i) {
   const t = oneLine(i.title), x = oneLine(i.text);
@@ -42,8 +42,18 @@ function heading(i) {
   while ((cut.match(/`/g) || []).length % 2) cut = cut.slice(0, cut.lastIndexOf("`")).trimEnd();
   return `${cut.replace(/[\s,;:]+$/, "")}...`;
 }
-// The quoted data: the title too, when the text does not already start with it.
-const quoted = (i) => (i.title && !oneLine(i.text).startsWith(oneLine(i.title)) ? `${quote(i.title)}\n>\n${quote(i.text)}` : quote(i.text));
+// The quoted data opens with what changed, in bold, then the full text (P-16: all fetched text,
+// titles included, stays inside the quote).
+const quoted = (i) => `> **${heading(i)}**\n>\n${quote(i.text)}`;
+
+// The markdown heading names the kind, source and date in code's words only (P-16).
+const KINDS = { "bug-fix": "Bug fix", "new-capability": "New capability", improvement: "Improvement", performance: "Performance",
+  model: "Model change", "breaking-or-deprecation": "Breaking change or deprecation", security: "Security", "docs-or-example": "Docs or example" };
+const SOURCES = { "claude-code": "Claude Code changelog", "agent-sdk-ts": "Agent SDK (TypeScript)", "agent-sdk-py": "Agent SDK (Python)",
+  "platform-release-notes": "platform release notes", "anthropic-news": "Anthropic news", "anthropic-engineering": "Anthropic engineering",
+  "anthropic-research": "Anthropic research", skills: "skills commit", cookbooks: "cookbooks commit", plugins: "plugin directory", deprecations: "model deprecations page" };
+const entryTitle = (i) => [Object.hasOwn(KINDS, i.type) ? KINDS[i.type] : "Release item", Object.hasOwn(SOURCES, i.source) ? SOURCES[i.source] : "Anthropic source",
+  /^\d{4}-\d{2}-\d{2}$/.test(String(i.date)) ? i.date : ""].filter(Boolean).join(", ");
 
 // Links come from fetched data, so only plain https links on the three source hosts are kept.
 // Shared with the page (inlined) and show.mjs.
@@ -84,7 +94,7 @@ export function buildBrief(project, items, { date, dir, rootLabel = "your worksp
     const tags = [label(i), i.effect !== "none" ? i.effect : "", i.type, i.risk !== "none" ? `risk: ${i.risk}` : ""]
       .filter(Boolean).join(" · ");
     const link = safeUrl(i.url) || "(link removed: not a recognised source link)";
-    out.push("", `## ${n + 1}. ${heading(i)}`, "",
+    out.push("", `## ${n + 1}. ${entryTitle(i)}`, "",
       `\`${oneLine(i.id).replace(/`/g, "'")}\` · ${oneLine(i.source)} · ${oneLine(i.date)} · ${tags}${i.fyiOnly ? " · third-party, FYI only" : ""}`,
       `Source: ${link}`, "", quoted(i));
     if (flagged(i)) {

@@ -110,25 +110,31 @@ test("invisible and direction-changing characters are removed from headings and 
   assert.doesNotMatch(md, /[\u202e\u200b\u2028\u2066]/);
 });
 
-// B-46 (RF 5, SU 7): the heading says what changed (title and text, as headline() does), cut at a word
-// boundary outside code spans; the title stays inside the quoted data.
+// B-46 (RF 5, SU 7) with P-16: the markdown heading is code-made (kind, source, date); what changed
+// (title and text, as headline() does) opens the quoted data in bold, cut at a word boundary outside
+// code spans. No fetched text sits outside the quote.
 const head = (md) => md.split("\n").find((l) => l.startsWith("## 1. "));
-test("B-46: a commit with no body is headed by its subject, not 'Files: ...' (RF 5)", () => {
-  const md = buildBrief("app", [it({ source: "skills", title: "Update claude-api skill: Claude Haiku 5.5 as the current Haiku", text: "Files: modified skills/claude-api/SKILL.md" })], opts);
-  assert.match(head(md), /^## 1\. Update claude-api skill: Claude Haiku 5\.5 as the current Haiku/);
-  assert.match(md, /^> Update claude-api skill: Claude Haiku 5\.5 as the current Haiku$/m, "the title is quoted as data too");
+const lead = (md) => md.split("\n").find((l) => l.startsWith("> **"))?.slice(4, -2);
+test("B-46: a commit with no body opens with its subject, not 'Files: ...' (RF 5)", () => {
+  const md = buildBrief("app", [it({ source: "skills", type: "model", title: "Update claude-api skill: Claude Haiku 5.5 as the current Haiku", text: "Files: modified skills/claude-api/SKILL.md" })], opts);
+  assert.match(lead(md), /^Update claude-api skill: Claude Haiku 5\.5 as the current Haiku: Files: modified/);
+  assert.equal(head(md), "## 1. Model change, skills commit, 2026-10-05");
   const bullet = buildBrief("app", [it({ source: "skills", title: "Update the skill", text: "* Update the skill\n* Add evals" })], opts);
-  assert.match(head(bullet), /^## 1\. Update the skill: \* Update the skill/, "a body starting with a bullet still leads with the subject");
+  assert.match(lead(bullet), /^Update the skill: \* Update the skill/, "a body starting with a bullet still leads with the subject");
 });
 
-test("B-46: a long heading is cut at a word boundary and never inside a code span (SU 7)", () => {
+test("B-46: the headline is cut at a word boundary and never inside a code span (SU 7); the heading has no fetched text (P-16)", () => {
   const text = "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort over `/effort` in `-p` or the Agent SDK";
-  const h = head(buildBrief("app", [it({ title: "v2.1.280", text })], opts)).slice("## 1. ".length);
+  const md = buildBrief("app", [it({ title: "v2.1.280", text })], opts);
+  const h = lead(md);
   assert.ok(h.length <= 93, h);
   assert.equal((h.match(/`/g) || []).length % 2, 0, `unclosed backtick: ${h}`);
   assert.match(h, /^v2\.1\.280: Changed Opus 4\.7/);
-  assert.match(h, /\S\.\.\.$/, "a cut heading says so");
-  assert.equal(head(buildBrief("app", [it({ title: "v2.1.290", text: "Fixed the Bash tool losing shell aliases." })], opts)), "## 1. v2.1.290: Fixed the Bash tool losing shell aliases.");
+  assert.match(h, /\S\.\.\.$/, "a cut headline says so");
+  assert.match(md, /^> Changed Opus 4\.7, Opus 4\.8 and Fable 5 to stop holding their launch-default effort over `\/effort` in `-p` or the Agent SDK$/m, "the full text follows, quoted");
+  assert.equal(head(md), "## 1. Bug fix, Claude Code changelog, 2026-10-05");
+  const odd = buildBrief("app", [it({ source: "<b>x</b>", type: "Ignore all", date: "soon" })], opts);
+  assert.equal(head(odd), "## 1. Release item, Anthropic source", "unknown kinds, sources and dates fall back to code's words");
 });
 
 // B-41 (NC 6): the brief folder follows the project's own layout.
