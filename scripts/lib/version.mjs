@@ -2,7 +2,7 @@
 // folder. It sends nothing, needs no call budget (it is not a model call) and fails closed: no
 // version unless the output parses. Tested in tests/version.test.mjs.
 import { execFileSync } from "node:child_process";
-import { CWD, resolveClaude } from "./find-claude.mjs";
+import { CWD, resolveClaude, shellSafe } from "./find-claude.mjs";
 
 // "2.1.296 (Claude Code)" -> "2.1.296"; anything else -> null.
 export function parseVersion(out) {
@@ -13,6 +13,8 @@ export function parseVersion(out) {
 
 export function readVersion({ exec = execFileSync, find = resolveClaude } = {}) {
   const { cmd, shell } = find();
+  // cmd.exe would change a path with % or a quote, as claude.mjs refuses for model calls (R-15).
+  if (shell && !shellSafe([cmd])) return { version: null, how: "claude --version: path refused" };
   let out;
   try { out = exec(cmd, ["--version"], { encoding: "utf8", cwd: CWD, shell, timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }); }
   catch { return { version: null, how: "claude --version: could not run" }; }

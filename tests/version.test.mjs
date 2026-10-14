@@ -28,6 +28,15 @@ test("readVersion fails closed: no version when the output does not parse or cla
   assert.deepEqual(readVersion({ exec: () => { throw new Error("ENOENT"); }, find }), { version: null, how: "claude --version: could not run" });
 });
 
+// R-15 (release review): on the shell path, a path cmd.exe would change is refused, as for model calls.
+test("readVersion refuses a claude path with % or a quote on the shell path, without running it", () => {
+  let ran = false;
+  const exec = () => { ran = true; return "2.1.296 (Claude Code)\n"; };
+  assert.deepEqual(readVersion({ exec, find: () => ({ cmd: "C:\\Users\\a%b\\claude.cmd", shell: true }) }), { version: null, how: "claude --version: path refused" });
+  assert.equal(ran, false);
+  assert.equal(readVersion({ exec, find: () => ({ cmd: "C:\\Users\\a%b\\claude.exe", shell: false }) }).version, "2.1.296", "no shell: nothing to change");
+});
+
 test("the version module never loads the call budget (claude.mjs)", () => {
   const src = readFileSync(join(import.meta.dirname, "..", "scripts", "lib", "version.mjs"), "utf8");
   assert.doesNotMatch(src, /from\s+["']\.\/claude\.mjs["']/);
