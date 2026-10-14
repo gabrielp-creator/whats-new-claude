@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1 (unreleased)
+- Fix: provenance. A plugin in the official marketplace counts as Anthropic-published only from its
+  `./plugins` folder or an `anthropics` repo on github.com; before, any `./` path counted, including
+  `./external_plugins` (14 of 315 entries on 2026-10-13), and a URL merely containing
+  `github.com/anthropics/` did too. A commit counts as first-party only when every pull request GitHub
+  links to it comes from the anthropics repo itself (or none does: a direct push); before, the commit
+  message's "(#N)" decided, which the commit's author writes, and a commit without one counted as
+  first-party. Items fetched before this version keep their stored label.
+
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
   project's files. A new model the project already uses drops to 5 ("already adopted: confirm settings
