@@ -68,6 +68,18 @@ test("retirementsFor: pinned ids match dated snapshots both ways; active models 
   assert.deepEqual(retirementsFor(used, [], "2026-10-14"), []);
 });
 
+// R-6 (release review): two dated snapshots of one version are two rows; an exact id picks its own.
+test("retirementsFor: a pinned dated snapshot matches its own row before another snapshot of the version", () => {
+  const table = [
+    { id: "claude-3-5-sonnet-20240620", state: "Retired", deprecated: "2025-08-13", retires: "2025-10-22", replacement: "claude-sonnet-4-5" },
+    { id: "claude-3-5-sonnet-20241022", state: "Deprecated", deprecated: "2025-08-13", retires: "2026-11-30", replacement: "claude-sonnet-4-5" },
+  ];
+  const [r] = retirementsFor([{ id: "claude-3-5-sonnet-20241022", file: "a.ts", line: 1 }], table, "2026-10-14");
+  assert.equal(r.pageId, "claude-3-5-sonnet-20241022");
+  assert.equal(r.state, "deprecated");
+  assert.equal(retirementsFor([{ id: "claude-3-5-sonnet-latest", file: "a.ts", line: 1 }], table, "2026-10-14")[0].pageId, "claude-3-5-sonnet-20240620", "no exact row: the version's first");
+});
+
 import { mkdtempSync, writeFileSync as write, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { refreshDeprecations } from "../scripts/lib/deprecations.mjs";

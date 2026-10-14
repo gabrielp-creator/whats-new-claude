@@ -70,7 +70,9 @@ export function retirementsFor(used, table, today) {
   const out = [];
   for (const u of used || []) {
     const m = parseModel(u.id);
-    const row = m && table.find((r) => (r.state === "Deprecated" || r.state === "Retired") && parseModel(r.id)?.id === m.id);
+    const listed = table.filter((r) => r.state === "Deprecated" || r.state === "Retired");
+    // An exact id first: two dated snapshots of one version are two rows (R-6).
+    const row = m && (listed.find((r) => r.id === u.id) || listed.find((r) => parseModel(r.id)?.id === m.id));
     if (!row) continue;
     const gone = row.state === "Retired" || Boolean(row.retires && row.retires <= today);
     out.push({ id: u.id, file: u.file, line: u.line, pageId: row.id, state: gone ? "retired" : "deprecated",
