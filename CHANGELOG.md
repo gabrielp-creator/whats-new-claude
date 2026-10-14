@@ -32,6 +32,10 @@
   alias may have moved: confirm which model it runs", and the file and line. A launch for a project
   with no model id and no alias is "model not known", no longer capped as "not found". The setup
   check also reads `~/.claude/lenses`.
+- A code or config file that quotes prose (runs of 8 or more words) from 3 or more release items is
+  read as a release archive: its names are mentions, never confirmations. One copied snippet still
+  counts, identifiers count as one word, and phrases shared by more than two items are ignored. Each
+  such file is printed by the file check and listed under `archives` in `models.json`.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each

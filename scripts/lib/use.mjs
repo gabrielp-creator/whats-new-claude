@@ -22,23 +22,29 @@ export function fileUse(file) {
   return CONFIG.test(file) || CODE.test(file) ? "used" : "mentioned";
 }
 
+const lines = (text) => String(text).split(/\r?\n/).map((t, i) => ({ line: i + 1, text: t }));
+
 // Splits a file into used and mentioned lines: [{line, text}], line numbers from 1.
 export function splitUse(file, text) {
-  const lines = String(text).split(/\r?\n/).map((t, i) => ({ line: i + 1, text: t }));
+  const all = lines(text);
   const kind = fileUse(file);
-  if (kind === "mentioned") return { used: [], mentioned: lines };
+  if (kind === "mentioned") return { used: [], mentioned: all };
   if (kind === "frontmatter") {
-    const end = lines[0]?.text.trim() === "---" ? lines.findIndex((l, i) => i > 0 && l.text.trim() === "---") : -1;
-    const used = end > 0 ? lines.slice(1, end).filter((l) => /^model\s*:/.test(l.text)) : [];
-    return { used, mentioned: lines.filter((l) => !used.includes(l)) };
+    const end = all[0]?.text.trim() === "---" ? all.findIndex((l, i) => i > 0 && l.text.trim() === "---") : -1;
+    const used = end > 0 ? all.slice(1, end).filter((l) => /^model\s*:/.test(l.text)) : [];
+    return { used, mentioned: all.filter((l) => !used.includes(l)) };
   }
-  return { used: lines.filter((l) => !COMMENT.test(l.text)), mentioned: lines.filter((l) => COMMENT.test(l.text)) };
+  return { used: all.filter((l) => !COMMENT.test(l.text)), mentioned: all.filter((l) => COMMENT.test(l.text)) };
 }
 
 // files: walk.mjs output. claudeRoot: the files are relative to a .claude folder (the setup project).
+// archives: files that store release text (archive.mjs, B-62); every line of them is a mention.
 // Returns token indexes of used and mentioned text, and the project's models (models.mjs modelUse).
-export function useIndex(files, { claudeRoot = false } = {}) {
-  const split = files.map((f) => ({ file: f.file, ...splitUse(claudeRoot ? `.claude/${f.file}` : f.file, f.text) }));
+export function useIndex(files, { claudeRoot = false, archives = new Set() } = {}) {
+  const split = files.map((f) => {
+    if (archives.has(f.file)) return { file: f.file, used: [], mentioned: lines(f.text) };
+    return { file: f.file, ...splitUse(claudeRoot ? `.claude/${f.file}` : f.file, f.text) };
+  });
   const text = (key) => split.map((s) => ({ file: s.file, text: s[key].map((l) => l.text).join("\n") }));
   return { used: tokenIndex(text("used")), mentioned: tokenIndex(text("mentioned")), models: modelUse(split) };
 }

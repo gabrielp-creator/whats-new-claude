@@ -16,6 +16,7 @@ import { extractTerms } from "./lib/probe.mjs";
 import { safeBriefDir } from "./lib/paths.mjs";
 import { collect as walk } from "./lib/walk.mjs";
 import { useIndex, lookup } from "./lib/use.mjs";
+import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -38,20 +39,26 @@ function projectFiles(p) {
 
 // A project that hits the file cap was only partly searched: it can confirm, never report "not found".
 // models.json: the Claude models each project's config and code use (pinned ids and aliases, with file
-// and line) and the ids only mentioned, for rating launches and model-scoped changes.
+// and line) and the ids only mentioned, for rating launches and model-scoped changes. archives: code
+// and config files that store release text, read as mentions (B-62), logged here and in models.json.
+const { items, rows } = loadRows(DATA, { evidence: false });
+const runs = releaseRuns(items);
 const indexes = new Map(), partial = new Set(), models = {};
 for (const p of config.projects) {
   const files = projectFiles(p);
-  const ix = files && useIndex(files, { claudeRoot: p.id === "setup" && !p.path });
+  const claudeRoot = p.id === "setup" && !p.path;
+  const archives = files ? archiveFiles(files, runs, { claudeRoot }) : [];
+  const ix = files && useIndex(files, { claudeRoot, archives: new Set(archives.map((a) => a.file)) });
   if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
-  if (ix) models[p.id] = { ...ix.models, partial: Boolean(files.capped) };
+  if (ix) models[p.id] = { ...ix.models, archives, partial: Boolean(files.capped) };
   console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}` : "no folder configured, not checked"}`);
+  for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
 }
 
 const out = [];
 let confirmed = 0, mentioned = 0, notFound = 0;
-for (const r of loadRows(DATA, { evidence: false }).rows) {
+for (const r of rows) {
   if (r.effect === "none" && !r.riskExposed) continue;
   const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
   if (!terms.length) continue;
