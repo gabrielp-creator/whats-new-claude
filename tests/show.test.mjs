@@ -127,3 +127,45 @@ test("formatList and hereList carry the code-made model note (B-29, B-33)", () =
   assert.equal(list[0].note, "upgrade from claude-opus-4-8");
   assert.match(formatList(list, { heading: "app", lastChecked: "x" }), /upgrade from claude-opus-4-8/);
 });
+
+// B-43 (Gabriel, 2026-10-13): nothing at the threshold falls back to 7+ and says so; nothing at 7+
+// either is said plainly, never a stack trace.
+import { exportPicks } from "../scripts/lib/show.mjs";
+test("B-43: export falls back from 8+ to 7+ and says so; nothing at all is a plain line", () => {
+  const today = Date.parse("2026-10-14T12:00:00Z");
+  const at = (id, project, score) => ({ id, date: "2026-10-10", ratings: [{ project, score }] });
+  const rows = [at("a", "app", 7.4), at("b", "web", 8.2)];
+  const full = exportPicks(rows, { min: 8, days: 30, now: today });
+  assert.deepEqual([full.picks.map((p) => p.id), full.min, full.message], [["b"], 8, ""]);
+  const app = exportPicks(rows, { min: 8, project: "app", days: 30, now: today });
+  assert.deepEqual([app.picks.map((p) => p.id), app.min], [["a"], 7]);
+  assert.equal(app.message, "Nothing rated 8+ for app in the last 30 days; using 7+.");
+  const none = exportPicks([at("c", "app", 5)], { min: 8, project: "app", days: 30, now: today });
+  assert.deepEqual(none.picks, []);
+  assert.equal(none.message, "Nothing rated 7+ for app in the last 30 days, so no brief was written. Try a lower --min, or see the page.");
+  assert.equal(exportPicks([at("c", "app", 6.5)], { min: 6, days: 30, now: today }).min, 6, "an explicit lower threshold has no fallback");
+  assert.equal(exportPicks([], { min: 6, days: 30, now: today }).message, "Nothing rated 6+ across your projects in the last 30 days, so no brief was written. Try a lower --min, or see the page.");
+});
+
+// B-42 (P-22): one phrase per state in the brief, on the page (inlined brief lib) and in the terminal.
+import { STATE_NAME } from "../scripts/lib/brief.mjs";
+import { STATES } from "../scripts/lib/rate.mjs";
+test("P-22: the terminal list names each pick's state with the brief's phrase", () => {
+  assert.deepEqual(STATE_NAME, STATES, "one phrase per state everywhere");
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 6.7, state: "confirm", note: "retired on 2026-06-15", foundIn: [], evidence: "confirmed" }] }];
+  const text = formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" });
+  assert.match(text, /Confirm handled \| /);
+});
+
+test("P-12: the terminal list says when the rater disagrees with the band", () => {
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 7, state: "act", note: "", foundIn: [], evidence: "confirmed", disagrees: true }] }];
+  assert.match(formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" }), /rater disagrees/);
+});
+
+test("B-65: the terminal list marks a rating made before 0.3.1", () => {
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 6, state: "act", note: "", foundIn: [], evidence: "unchecked", ratedBefore: "0.3.1" }] }];
+  assert.match(formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" }), /rated before 0\.3\.1/);
+});

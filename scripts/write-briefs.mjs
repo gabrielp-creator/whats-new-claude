@@ -13,9 +13,9 @@ import { join, relative, sep } from "node:path";
 import { dataDir } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
-import { buildBrief, briefFileName } from "./lib/brief.mjs";
+import { buildBrief, briefFileName, withEvents } from "./lib/brief.mjs";
 import { safeBriefDir, inProjectScope, recheckCreated } from "./lib/paths.mjs";
-import { topPicks } from "./lib/show.mjs";
+import { exportPicks } from "./lib/show.mjs";
 import { parseCommand } from "./lib/args.mjs";
 
 const DATA = dataDir();
@@ -38,7 +38,10 @@ const allRows = loadRows(DATA).rows;
 const rows = new Map(allRows.map((r) => [r.id, r]));
 let exp;
 if (FILE === "top") {
-  exp = { picks: topPicks(allRows, { min: OPTS.min ?? config.minRating, project: OPTS.project, days: 30 }) };
+  const chosen = exportPicks(allRows, { min: OPTS.min ?? config.minRating, project: OPTS.project, days: 30 });
+  if (chosen.message) console.log(chosen.message);
+  if (!chosen.picks.length) process.exit(0);
+  exp = { picks: chosen.picks };
 } else exp = JSON.parse(readFileSync(FILE, "utf8"));
 // The page's plain-language rewrites are model output that page viewers can edit: never put in a brief.
 const folders = new Map((exp.folders || []).map((f) => [f.id, f.data?.dir]));
@@ -56,6 +59,8 @@ for (const p of exp.picks || []) {
   }
 }
 if (!byProject.size) throw new Error("no saved picks with a known project; nothing to write");
+// B-38: a picked item brings the rest of its event, so the brief's one entry has every source's link.
+for (const [proj, items] of byProject) byProject.set(proj, withEvents(proj, items, allRows));
 
 for (const [proj, items] of byProject) {
   const project = projects.get(proj);
@@ -69,6 +74,8 @@ for (const [proj, items] of byProject) {
     else if (chosen) console.error(`${proj}: page folder ${JSON.stringify(pageDir)} is outside the project; using ${project.briefDir}`);
   }
   const md = buildBrief(proj, items, { date: DATE, dir: relative(config.workspaceRoot, dir).split(sep).join("/"), rootLabel: config.workspaceRoot });
+  // P-21: nothing to confirm, act on or keep for later: no file in the project, one line here.
+  if (!md) { console.log(`${proj}: only items not used here or already in your version; no brief written.`); continue; }
   let file = join(dir, briefFileName(proj, DATE));
   for (let n = 2; existsSync(file); n++) file = join(dir, briefFileName(proj, DATE).replace(/\.md$/, `-${n}.md`));
   // "wx": never overwrite, and never write through a file or link that appeared after the check above.

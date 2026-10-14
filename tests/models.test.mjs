@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseModel, modelRefs, inventory, launchStatus, scopeOverlap } from "../scripts/lib/models.mjs";
+import { parseModel, modelRefs, launchStatus, isLaunchText } from "../scripts/lib/models.mjs";
+
+// B-57 (P-10): a launch is said with a launch verb next to the model's name, in one clause.
+test("isLaunchText: launch verbs next to a model name; 'available' and passing mentions are not launches", () => {
+  for (const t of [
+    "We've launched Claude Haiku 5.5 (claude-haiku-5-5), our most capable model tuned for high-volume work",
+    "Added Claude Sonnet 5.5 (`claude-sonnet-5-5`), now the default Sonnet model on the Anthropic API",
+    "Introducing Claude Opus 5.5",
+  ]) assert.equal(isLaunchText(t), true, t);
+  for (const t of [
+    "Both toolsets are available for Claude Fable 5, Claude Mythos 5, Claude Opus 5, Claude Sonnet 5, and Claude Opus 4.8 on the Claude API.",
+    "Thinking blocks that Claude Sonnet 5.5 produces work only in the account that produced them",
+    "Fast mode (research preview) is available for Claude Opus 5.5 on the Claude API.",
+    "Added a line field to the Models API. Claude Opus 4.5 and Claude Opus 4.6 both report opus",
+    "Added `--model` support; we launched it. Claude Opus 5 is unchanged",
+  ]) assert.equal(isLaunchText(t), false, t);
+});
 
 test("parseModel reads current, dated, cloud and old-style ids into family and version", () => {
   assert.deepEqual(parseModel("claude-opus-5-5"), { family: "opus", version: [5, 5], id: "claude-opus-5-5" });
@@ -21,14 +37,8 @@ test("modelRefs finds ids and prose names in release text, deduplicated", () => 
   assert.deepEqual(modelRefs("On Claude Fable 5.1 and Claude Mythos 5.1, tool_choice").map((m) => m.id), ["claude-fable-5-1", "claude-mythos-5-1"]);
   assert.deepEqual(modelRefs("Sonnet 4.5 retires on 2026-11-01").map((m) => m.id), ["claude-sonnet-4-5"]);
   assert.deepEqual(modelRefs("an opus 5 poem, Haiku about spring, version 2.1.280"), [], "lowercase words and bare family names are not model names");
-});
-
-test("inventory lists the model ids a project's files use, by first file, without duplicates", () => {
-  const inv = inventory([
-    { file: "src/a.ts", text: 'model: "claude-opus-4-8", fallback: "claude-opus-4-8"' },
-    { file: "src/b.py", text: "MODEL = 'claude-sonnet-4-5-20250929'  # anthropic.claude-opus-5-5-v1:0" },
-  ]);
-  assert.deepEqual(inv, ["claude-opus-4-8", "claude-sonnet-4-5", "claude-opus-5-5"]);
+  assert.deepEqual(modelRefs("a \"switch to Opus 1M for 5x more context\" tip; Sonnet/Opus 1M for subscribers"), [], "a context size is not a version");
+  assert.deepEqual(modelRefs("Opus 4.8's effort, Sonnet 5.5."), modelRefs("claude-opus-4-8 claude-sonnet-5-5"));
 });
 
 const opus55 = modelRefs("Added Claude Opus 5.5 (`claude-opus-5-5`)");
@@ -49,17 +59,27 @@ test("launchStatus: an older model of the same family = upgrade; another family 
   assert.equal(launchStatus(modelRefs("Claude Opus 4.8"), ["claude-opus-5-5"]).status, "other-models");
 });
 
-test("scopeOverlap: which of the item's models the project uses (same family and version)", () => {
-  const refs = modelRefs("Code written for Claude Sonnet 5 can break on Claude Sonnet 5.5. The advisor tool rejects Claude Opus 4.8.");
-  assert.deepEqual(scopeOverlap(refs, ["claude-opus-4-8", "claude-opus-5-5"]), ["claude-opus-4-8"]);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-4-6"]), []);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5"]), ["claude-sonnet-5"]);
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-20260301"]), ["claude-sonnet-5"], "dated ids are read by family and version");
-  assert.deepEqual(scopeOverlap(refs, ["claude-sonnet-5-5"]), ["claude-sonnet-5-5"]);
-});
-
-test("launchStatus: a model listed as in use is never repeated as an older one", () => {
+// B-44 (RF 1): only the newest model named per family is the launch; a predecessor named for
+// comparison is an older model, never "adopted".
+test("launchStatus: the newest named model of a family is the launch; older named ones are upgrades from", () => {
   const refs = modelRefs("Claude Opus 5.5 replaces Claude Opus 5 as the default");
   assert.deepEqual(launchStatus(refs, ["claude-opus-5", "claude-opus-5-5", "claude-opus-4-8"]),
-    { status: "adopted", uses: ["claude-opus-5", "claude-opus-5-5"], older: ["claude-opus-4-8"] });
+    { status: "adopted", uses: ["claude-opus-5-5"], older: ["claude-opus-5", "claude-opus-4-8"] });
+  const price = modelRefs("We've launched Claude Opus 5.5 (claude-opus-5-5) at $4 / $20 USD per MTok (Claude Opus 5 is $5 / $25)");
+  assert.deepEqual(launchStatus(price, ["claude-opus-5"]), { status: "upgrade", uses: ["claude-opus-5"], older: ["claude-opus-5"] });
+  const skill = modelRefs("Make Claude Opus 5.5 (`claude-opus-5-5`) the default model, with Claude Opus 5 as the previous Opus");
+  assert.equal(launchStatus(skill, ["claude-opus-5"]).status, "upgrade");
+});
+
+test("isLaunchText: a commit's 'Add Claude X' and 'Make Claude X the default' are launch templates (B-57)", () => {
+  for (const t of [
+    "Add Claude Sonnet 5.5 (`claude-sonnet-5-5`) as the current Sonnet, with Claude Sonnet 5 as the previous one",
+    "Make Claude Opus 5.5 (`claude-opus-5-5`) the default model across SKILL.md",
+  ]) assert.equal(isLaunchText(t), true, t);
+  for (const t of [
+    "Changed Sonnet 5's default auto-compact window to its full 1M context",
+    "Changed the default model on Pro and Team Standard plans from Sonnet to Opus",
+    "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort",
+    "Fixed the address field, Add Opus support later",
+  ]) assert.equal(isLaunchText(t), false, t);
 });

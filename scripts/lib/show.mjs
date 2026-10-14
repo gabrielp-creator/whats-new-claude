@@ -3,7 +3,7 @@
 // instructions shown as "title withheld", and the whole list labelled as untrusted data.
 // Tested in tests/show.test.mjs.
 import { resolve, sep } from "node:path";
-import { safeUrl } from "./brief.mjs";
+import { safeUrl, STATE_NAME } from "./brief.mjs";
 
 const DAY = 864e5;
 const TITLE_MAX = 120;
@@ -46,6 +46,7 @@ const entry = (row, rating) => ({
   id: row.id, title: headline(row), url: row.url, date: row.date, injection: Boolean(row.injection),
   score: rating?.score ?? row.rating, do: rating?.do ?? null, why: rating?.why ?? "",
   evidence: rating?.evidence ?? "unchecked", foundIn: rating?.foundIn ?? [], note: rating?.note ?? "", provisional: Boolean(rating?.provisional),
+  state: rating?.state ?? null, disagrees: Boolean(rating?.disagrees), ratedBefore: rating?.ratedBefore ?? null,
 });
 
 export function hereList(rows, { project, min, days, now = Date.now(), limit = 10 }) {
@@ -76,6 +77,21 @@ export function topPicks(rows, { min, project, days, now = Date.now() }) {
   return picks;
 }
 
+// B-43 (Gabriel, 2026-10-13): the picks "export top picks" writes. Nothing at the threshold falls
+// back to 7+ and says so; nothing at 7+ either is one plain line, never an error.
+const FALLBACK_MIN = 7;
+export function exportPicks(rows, { min, project, days, now = Date.now() }) {
+  const where = project ? `for ${project}` : "across your projects";
+  let picks = topPicks(rows, { min, project, days, now }), used = min, message = "";
+  if (!picks.length && min > FALLBACK_MIN) {
+    picks = topPicks(rows, { min: FALLBACK_MIN, project, days, now });
+    used = FALLBACK_MIN;
+    if (picks.length) message = `Nothing rated ${min}+ ${where} in the last ${days} days; using ${FALLBACK_MIN}+.`;
+  }
+  if (!picks.length) message = `Nothing rated ${used}+ ${where} in the last ${days} days, so no brief was written. Try a lower --min, or see the page.`;
+  return { picks, min: used, message };
+}
+
 export function lastChecked(state, now = Date.now()) {
   const times = Object.values(state?.sources || {}).map((s) => s.lastSuccess).filter(Boolean).sort();
   if (!times.length) return "never";
@@ -94,7 +110,7 @@ export function formatList(entries, { heading, lastChecked: checked, nonce = Mat
     const title = e.injection ? "(title withheld: this item contained instructions aimed at an AI; see the page or the link)" : clean(e.title, TITLE_MAX);
     const score = typeof e.score === "number" ? e.score.toFixed(1) : "-";
     lines.push(`${score}${e.provisional ? "*" : ""}  ${title}  [${e.date}]`);
-    const detail = [e.do && `do: ${e.do}`, e.why && !e.injection && clean(e.why, 160),
+    const detail = [e.state && STATE_NAME[e.state], e.disagrees && "rater disagrees", e.ratedBefore && `rated before ${e.ratedBefore}`, e.do && `do: ${e.do}`, e.why && !e.injection && clean(e.why, 160),
       e.evidence === "confirmed" && e.foundIn.length && `found in ${clean(e.foundIn[0].file, 80)}`, e.note && clean(e.note, 160)].filter(Boolean);
     if (detail.length) lines.push(`     ${detail.join(" | ")}`);
     if (link(e.url)) lines.push(`     ${link(e.url)}`);

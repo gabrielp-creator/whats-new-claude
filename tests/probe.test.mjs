@@ -11,6 +11,7 @@ test("pulls concrete names out of release text", () => {
 test("ignores generic words and short or noisy spans", () => {
   const t = extractTerms("Fixed a bug in the `ui`. Improved JSON output and README. `a long phrase with spaces` and `true`.");
   assert.deepEqual(t, []);
+  assert.deepEqual(extractTerms("a deny rule written for `http://` or `https://` hosts"), [], "a URL scheme alone is not a name");
 });
 
 test("token index finds identifiers with surrounding punctuation, by exact case", () => {
@@ -23,6 +24,13 @@ test("token index finds identifiers with surrounding punctuation, by exact case"
   assert.equal(idx.get("/memory"), "CLAUDE.md");
   assert.equal(idx.get("bashoutputmaxchars"), undefined, "case-sensitive");
   assert.equal(idx.get("taskOutputMaxChars"), undefined);
+});
+
+test("token index keeps a long flag's dashes, as extractTerms does (B-61, LCW 3)", () => {
+  const idx = tokenIndex([{ file: "run.sh", text: 'claude -p --strict-mcp-config "x"\n- a bullet, -- a dash' }]);
+  assert.equal(idx.get("--strict-mcp-config"), "run.sh");
+  assert.ok(extractTerms("Added `--strict-mcp-config`.").includes("--strict-mcp-config"), "the term the check looks up");
+  assert.equal(idx.get("-"), undefined);
 });
 
 const row = (o = {}) => ({ urgency: 60, urgencyLabel: "soon", projects: ["app"], ...o });
@@ -42,6 +50,45 @@ test("not found is a note, never a downgrade: absence is unknown, not none", () 
     assert.equal(r.urgency, u);
     assert.equal(r.evidence, "not-found");
   }
+});
+
+test("a name only mentioned (docs, data, comments) is 'mentioned': no +2, and not 'not-found' (B-47)", () => {
+  const r = applyEvidence(row(), [{ project: "app", checked: ["x"], found: [], mentioned: [{ term: "x", file: "docs/d.md" }] }]);
+  assert.equal(r.evidence, "mentioned");
+  assert.equal(r.urgency, 60);
+  assert.deepEqual(r.confirmedIn, []);
+  const mixed = applyEvidence(row({ projects: ["app", "web"] }), [
+    { project: "app", checked: ["x"], found: [], mentioned: [{ term: "x", file: "docs/d.md" }] },
+    { project: "web", checked: ["x"], found: [{ term: "x", file: "src/a.ts" }] }]);
+  assert.equal(mixed.evidence, "confirmed");
+  assert.deepEqual(mixed.confirmedIn, ["web"]);
+});
+
+// B-50 (SU 1): no +2 for a hit the item's model scope rules out, or for one resting only on a generic
+// settings key.
+const effort = row({ urgency: 82, urgencyLabel: "urgent", type: "breaking-or-deprecation", risk: "behavior-change",
+  text: "Changed Opus 4.7, Opus 4.8 and Fable 5 to stop holding their launch-default effort over `effortLevel`" });
+const keyHit = [{ project: "app", checked: ["effortLevel"], found: [{ term: "effortLevel", file: "settings.json" }] }];
+
+test("B-50: a keyword hit on a change scoped to other models is not a confirmation and adds nothing", () => {
+  const r = applyEvidence(effort, keyHit, { app: { models: ["claude-opus-5-5"], partial: false } });
+  assert.equal(r.urgency, 82);
+  assert.deepEqual(r.confirmedIn, []);
+  // R-5 (release review): the name was found, so the row is context, never "names not seen"
+  assert.equal(r.evidence, "mentioned");
+});
+
+test("B-50: a confirmation resting only on a camelCase key in a settings file keeps its tier without +2", () => {
+  const r = applyEvidence(effort, keyHit, { app: { models: ["claude-opus-4-8"], partial: false } });
+  assert.equal(r.evidence, "confirmed");
+  assert.deepEqual(r.confirmedIn, ["app"]);
+  assert.equal(r.urgency, 82);
+  const local = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: ".claude/settings.local.json" }] }], undefined);
+  assert.equal(local.urgency, 82);
+  const inCode = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: "src/run.ts" }] }], undefined);
+  assert.equal(inCode.urgency, 84, "the same key in code is real use");
+  const model = applyEvidence(effort, [{ ...keyHit[0], found: [{ term: "effortLevel", file: "settings.json" }, { term: "claude-opus-4-8", file: "settings.json" }] }], undefined);
+  assert.equal(model.urgency, 84, "a model id is not a generic key");
 });
 
 test("nothing to check, or a project left unchecked, is unchecked", () => {

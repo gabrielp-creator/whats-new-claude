@@ -82,7 +82,9 @@ If the output says the results are old, offer **Update now**.
 5. `run enrich-commits`.
 6. `run plan`. If `askFirst` is true, ask the user whether to run `calls` Claude calls (`lensCalls` to
    review `itemsNeedingReview` items, `rateCalls` to rate about `itemsToRate`; they run on the user's own
-   Claude account), and stop if they decline. The approved number is `calls` (when `askFirst` is false,
+   Claude account), and stop if they decline. When `itemsToRedo` is above 0, say in that same question
+   that this many of the items to rate were rated before 0.3.1 and are rated again; never call them
+   new, and never ask about them separately. The approved number is `calls` (when `askFirst` is false,
    it is approved by their limit). If `calls` is 0, skip to step 8.
 7. `run lens-run --max-calls <calls + 3>`. The cap is enforced in code; the 3 covers retries. It
    prints `Claude calls used: N`. If it reports failures, say how many and that the next run retries.

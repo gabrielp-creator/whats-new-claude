@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // Fetches Anthropic release items published since each source's last successful run (first run: a
 // look-back window) and adds new ones to <data>/items.jsonl. Deterministic, no LLM, read-only HTTP
-// to allowlisted hosts. A failed source is reported loudly and its state is not advanced.
+// to allowlisted hosts. A failed source is reported loudly and its state is not advanced. Also
+// refreshes <data>/deprecations.json, the model status table for the retirement check (B-4).
 // Usage: node fetch.mjs [firstRunDays=30] [--data <dir>]
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { dataDir, positional, readJsonl, readJson, writeJsonl, writeJson } from "./lib/store.mjs";
-import { sinceFor, mergeItems, recordSource, heartbeatWarnings, prNumber } from "./lib/incremental.mjs";
+import { sinceFor, mergeItems, recordSource, heartbeatWarnings, clampDate } from "./lib/incremental.mjs";
+import { pluginItems, commitProvenance } from "./lib/provenance.mjs";
 import { safeUrl } from "./lib/brief.mjs";
 import { get, errLine } from "./lib/net.mjs";
+import { refreshDeprecations } from "./lib/deprecations.mjs";
 
 const TEXT_MAX = 4000; // a huge item would be billed in full on every lens call
 
@@ -90,26 +93,7 @@ async function pluginMarketplace(since) {
     return JSON.parse(Buffer.from(f.content, "base64").toString("utf8")).plugins;
   };
   const before = new Set((old ? await load(old.sha) : []).map((p) => p.name));
-  const today = new Date().toISOString().slice(0, 10);
-  return (await load()).filter((p) => !before.has(p.name)).map((p) => {
-    const src = typeof p.source === "string" ? p.source : p.source?.url || p.source?.repo || "";
-    const anthropic = src.startsWith("./") || /(^|github\.com\/)anthropics\//.test(src);
-    return {
-      id: `plugins:${p.name}`, source: "plugins", date: today, title: `New plugin: ${p.name}`,
-      text: String(p.description || "").slice(0, 400), url: `https://github.com/${repo}`,
-      provenance: anthropic ? "anthropic-published" : "third-party",
-    };
-  });
-}
-
-// Provenance: a PR whose head branch lives in the anthropics repo was pushed by someone with write
-// access; a PR from a fork is external; a direct commit also needs write access.
-async function commitProvenance(repo, message) {
-  const merge = String(message).split("\n")[0].match(/^Merge pull request #(\d+)/);
-  const pr = merge ? Number(merge[1]) : prNumber(message); // the last (#N): a title can name another PR earlier
-  if (!pr) return "anthropic-write-access";
-  const p = await get(`https://api.github.com/repos/${repo}/pulls/${pr}`, { json: true });
-  return p.head?.repo?.full_name === repo ? "anthropic-write-access" : "external-fork";
+  return pluginItems(await load(), before, { repo, today: new Date().toISOString().slice(0, 10) });
 }
 
 async function githubCommits(repo, source, since) {
@@ -117,9 +101,10 @@ async function githubCommits(repo, source, since) {
   for (let page = 1; page <= 5; page++) {
     const commits = await get(`https://api.github.com/repos/${repo}/commits?per_page=100&page=${page}&since=${since.toISOString()}`, { json: true });
     for (const c of commits) items.push({
-      id: `${source}:${c.sha.slice(0, 7)}`, source, date: c.commit.author.date.slice(0, 10),
+      // when it landed (committer), not the author's own date, which a rebase keeps and anyone can set
+      id: `${source}:${c.sha.slice(0, 7)}`, source, date: (c.commit.committer?.date || c.commit.author.date).slice(0, 10),
       title: c.commit.message.split("\n")[0].slice(0, 200), text: "", url: c.html_url,
-      provenance: await commitProvenance(repo, c.commit.message),
+      provenance: await commitProvenance(repo, { sha: c.sha, message: c.commit.message }, get),
     });
     if (commits.length < 100) break;
   }
@@ -183,6 +168,7 @@ for (const [name, job] of Object.entries(SOURCES)) {
     const fresh = await job(since);
     for (const it of fresh) {
       it.url = safeUrl(it.url); // links are fetched data: https on the source hosts only
+      it.date = clampDate(it.date); // so is the date: never in the future
       it.text = String(it.text || "").slice(0, TEXT_MAX);
       it.tripwires = tripwireHits(it, terms);
     }
@@ -197,6 +183,12 @@ for (const [name, job] of Object.entries(SOURCES)) {
     lines.push(`${name}: FAILED: ${errLine(e)}`);
   }
 }
+// B-4: the deprecations page's model status table, a snapshot for the retirement check, not items.
+// A failure is loud like any source's, and the last good snapshot stays.
+const dep = await refreshDeprecations(DATA, get);
+state = recordSource(state, "deprecations", dep.ok ? { ok: true } : { ok: false, error: dep.error });
+lines.push(dep.line);
+if (!dep.ok) failed++;
 writeJsonl(itemsPath, store);
 writeJson(statePath, state);
 console.log(lines.join("\n"));

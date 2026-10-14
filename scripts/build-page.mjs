@@ -5,11 +5,12 @@
 // Usage: node build-page.mjs [--data <dir>]
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, PLUGIN_ROOT, writeJson } from "./lib/store.mjs";
+import { dataDir, PLUGIN_ROOT, writeJson, readJson, readJsonl } from "./lib/store.mjs";
 import { STALE_DAYS } from "./lib/reminder.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
 import { topPicks } from "./lib/show.mjs";
+import { counters, jumps } from "./lib/counters.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -35,5 +36,8 @@ for (const r of rows) counts[r.urgencyLabel] = (counts[r.urgencyLabel] || 0) + 1
 const top = {};
 for (const p of topPicks(rows, { min: config.minRating, days: STALE_DAYS })) for (const id of p.data.projects) top[id] = (top[id] || 0) + 1;
 const topTotal = Object.values(top).reduce((s, n) => s + n, 0);
-writeJson(join(DATA, "summary.json"), { builtAt: new Date().toISOString(), min: config.minRating, top, topTotal, total: counts });
+// Silent-failure counters, with the jumps since the last build for the reminder (P-5).
+const before = readJson(join(DATA, "summary.json"), null)?.counters || null;
+const now = counters(rows, { evidence: readJsonl(join(DATA, "evidence.jsonl")), models: readJson(join(DATA, "models.json"), {}), profiles: readJson(join(DATA, "profile.json"), {}) });
+writeJson(join(DATA, "summary.json"), { builtAt: new Date().toISOString(), min: config.minRating, top, topTotal, total: counts, counters: now, counterJumps: jumps(before, now) });
 console.log(JSON.stringify({ page: out, items: rows.length, notYetReviewed: missing, urgency: counts }, null, 2));

@@ -4,7 +4,7 @@ A Claude Code plugin that tells you which of Anthropic's new releases matter to 
 rates each one from 0 to 10 for each project, shows the top picks for the project you are working in,
 and turns them into ready-to-use briefs.
 
-Version 0.3.0. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
+Version 0.3.1. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
 
 ## What you see
 
@@ -43,7 +43,8 @@ Options: `here --min 8.5 --days 14 --project <id>`, `news --days 3`,
 
 1. **Fetches** new items from eight Anthropic sources: Claude Code releases, both Agent SDKs, the API
    release notes, anthropic.com (news, engineering, research), the skills and cookbooks repos, and new
-   plugins in the official marketplace.
+   plugins in the official marketplace. It also reads the model deprecations page, so a model id your
+   code pins that is deprecated or retired is flagged with its date, with no Claude call.
 2. **Reviews** each item with three Claude calls that have **no tools**: impact on each of your
    projects, kind of change, and risk. Tested code merges them into an urgency level.
 3. **Checks your files**: looks up the concrete names in each item (settings keys, model ids,
@@ -91,10 +92,14 @@ in code. Plain-language rewrites on the page run only when you click for them.
 - **Fetches** only from `api.github.com`, `platform.claude.com` and `www.anthropic.com`. Your GitHub
   token, if you set one, is sent only to `api.github.com`.
 - **Sends to Anthropic** (through your own `claude -p` calls, the same as any Claude Code use): the
-  release items, your project ids and one-line descriptions, and, for rating, the names that were or
-  were not found in each project and the file paths where they were found. Never file contents.
+  release items, your project ids and one-line descriptions, and, for rating, the names and settings
+  facts that were or were not found in each project and the file paths where they were found. Never
+  file contents.
 - **Reads locally**: your project folders and your `~/.claude` config files (not transcripts), for the
-  file check. File contents never leave your machine.
+  file check. File contents never leave your machine. Since 0.3.1 it also reads `settings.local.json`,
+  in memory and for a fixed set of facts only (hook events and types, the tool names in permission
+  rules, `defaultMode`, the sandbox), never rule text, hook commands or environment values, and runs
+  `claude --version` locally to learn your Claude Code version.
 - **Writes**: its own data folder (`~/.claude/plugins/data/...`), your private review page, and, when
   you ask, brief files inside your workspace (never into `.git`, `node_modules`, `.claude`, `dotfiles`
   or folders you block, checked on disk so links and short names cannot get around it; never

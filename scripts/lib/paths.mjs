@@ -4,7 +4,7 @@
 // refuses spellings Windows maps to other folders (8.3 short names such as CLAUDE~1, trailing dots
 // or spaces). Tested in tests/config.test.mjs.
 import { resolve, relative, isAbsolute, sep, dirname } from "node:path";
-import { realpathSync, existsSync } from "node:fs";
+import { realpathSync, existsSync, readdirSync } from "node:fs";
 
 // Spellings Windows maps to other folders or devices: 8.3 short names (CLAUDE~1), trailing dots or
 // spaces, NTFS streams (.claude::$INDEX_ALLOCATION), and reserved device names (CON, NUL, COM1...).
@@ -59,4 +59,16 @@ export function safeBriefDir(root, dir, blocked, { write = true } = {}) {
 export function recheckCreated(root, abs, blocked) {
   const realRoot = realpathSync.native(resolve(root));
   check(realRoot, realpathSync.native(abs), blocked, abs, true);
+}
+
+// The brief folder scan-projects.mjs drafts for a project (B-41, NC 6): its existing docs/briefs/;
+// else docs/ when that already holds briefs (*brief*.md); else a new docs/briefs/ under docs/; else
+// briefs/. Relative to the workspace root.
+export function briefDirFor(root, name) {
+  const docs = resolve(root, name, "docs");
+  if (existsSync(resolve(docs, "briefs"))) return `${name}/docs/briefs`;
+  let files = [];
+  try { files = readdirSync(docs); } catch {}
+  if (files.some((f) => /brief.*\.md$/i.test(f))) return `${name}/docs`;
+  return `${name}/${existsSync(docs) ? "docs/briefs" : "briefs"}`;
 }
