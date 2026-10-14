@@ -62,6 +62,12 @@
   confirms the item ("`command` hook on Stop", "Bash in deny rules"), and when every setting the item
   names is visible but absent, the item counts as "not found". A mode that can be switched during a
   session, or a project with no settings file, stays unknown.
+- The file check records what a project's own scripted calls to the `claude` CLI switch off, in
+  `profile.json` under `cli`, and prints it: tools (`--tools ""`), MCP (`--strict-mcp-config` with no
+  `--mcp-config`), and hooks, skills, plugins and MCP (`--safe-mode`). A feature counts as off only
+  when every call found turns it off with literal arguments and the project's `.claude` folder does
+  not switch it on; arguments from a variable, a spread, a condition or `"$@"` make it unknown. Each
+  entry lists the file and line of every call.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each

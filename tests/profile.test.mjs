@@ -185,6 +185,10 @@ test("buildProfile reads settings.local.json in process, plugin hooks of enabled
   assert.deepEqual(p.rules.map((r) => `${r.list}:${r.kind}`), ["deny:Read", "allow:Bash"]);
   assert.deepEqual(p.inlineShell, [".claude/commands/deploy.md"]);
   assert.deepEqual(p.packages, [{ name: "@anthropic-ai/sdk", file: "app/package.json" }, { name: "anthropic", file: "requirements.txt" }]);
+  assert.equal(p.plugins, 1, "enabled plugins are counted, never named");
+  assert.equal(p.mcpJson, false);
+  writeFileSync(join(root, ".mcp.json"), "{}");
+  assert.equal(buildProfile(root, [], { home }).mcpJson, true, ".mcp.json is checked for existence, never opened");
   const out = JSON.stringify(p);
   for (const s of ["s3cret", "abc123", "internal.example", "tool@market", "market"]) assert.ok(!out.includes(s), s);
 });

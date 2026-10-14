@@ -21,6 +21,7 @@ import { collect as walk } from "./lib/walk.mjs";
 import { useIndex, lookup } from "./lib/use.mjs";
 import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
+import { cliProfile } from "./lib/cli.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -60,7 +61,11 @@ for (const p of config.projects) {
   if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
   if (ix) models[p.id] = { ...ix.models, claudeCalls: ix.claudeCalls, archives, partial: Boolean(files.capped) };
-  console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}` : "no folder configured, not checked"}`);
+  // What the project's own scripted claude calls switch off (B-59); a capped walk may miss a call.
+  if (ix) profiles[p.id].cli = files.capped ? { status: "unknown", calls: [], off: {} } : cliProfile(files, ix.claudeCalls, profiles[p.id]);
+  const cli = profiles[p.id]?.cli;
+  const off = cli?.status === "known" && Object.keys(cli.off).length ? `; scripted claude calls run with ${Object.keys(cli.off).join(", ")} off` : "";
+  console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}${off}` : "no folder configured, not checked"}`);
   for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
 }
 

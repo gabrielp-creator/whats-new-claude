@@ -107,6 +107,8 @@ export function buildProfile(root, files, { home = homedir(), claudeRoot = false
     const text = readText(join(at, "hooks", "hooks.json"));
     if (text !== null) take({ ...parseSettings(text, "plugin"), rules: [], defaultMode: null, sandbox: null, plugins: [] });
   }
+  p.plugins = plugins.size; // a count only: plugin names are third-party text
+  p.mcpJson = !claudeRoot && existsSync(join(root, ".mcp.json")); // existence only, never opened
   for (const f of files) {
     const path = claudeRoot ? `.claude/${f.file}` : f.file;
     if (COMMAND_FILE.test(path) && INLINE_SHELL.test(f.text)) p.inlineShell.push(f.file);
