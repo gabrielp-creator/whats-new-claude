@@ -190,6 +190,7 @@ export function buildBrief(project, items, { date, dir, rootLabel = "your worksp
       // when this project's files confirm the exposure.
       if (rating) {
         out.push("", `Rated ${rating.score} for ${project} (${bandOf(rating)}).${rating.why ? ` Why: ${oneLine(rating.why)}` : ""}`);
+        if (rating.ratedBefore) out.push(`Rated before ${oneLine(rating.ratedBefore)}: the next /whats-new run can rate it again.`);
         if (rating.note) out.push(`Code's check: ${oneLine(rating.note)}`);
         // P-12: shown, never used to move the item.
         if (rating.disagrees) out.push(`The rater disagrees with this band: it gave ${Number(rating.raw)}${rating.do === "ignore" ? " and said ignore" : ""}.`);

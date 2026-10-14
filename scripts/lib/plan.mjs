@@ -9,7 +9,8 @@ const batches = (n, size) => (typeof n === "number" ? Math.ceil(n / size) : Math
 // perLens: items still missing each lens's answer; unratedKnown: urgent/soon items with a project and
 // no rating yet. Items the lenses have not seen are estimated to need rating at RATED_SHARE. Re-runs
 // after an injection flag (batch.mjs) are not predicted: they count against the same call cap.
-export function planCalls({ perLens, unratedKnown, limit }) {
+// toRedo: of unratedKnown, the items rated before (B-65, P-20): counted apart, asked about in one question.
+export function planCalls({ perLens, unratedKnown, toRedo = 0, limit }) {
   const lensCalls = perLens.reduce((s, n) => s + batches(n, LENS_BATCH), 0);
   const unseen = Math.max(0, ...perLens.map(total));
   const estimate = Math.ceil(unseen * RATED_SHARE);
@@ -18,5 +19,5 @@ export function planCalls({ perLens, unratedKnown, limit }) {
     ? Math.ceil(toRate / RATE_BATCH)
     : batches({ first: (unratedKnown?.first || 0) + estimate, fyi: unratedKnown?.fyi || 0 }, RATE_BATCH);
   const calls = lensCalls + rateCalls;
-  return { itemsNeedingReview: unseen, itemsToRate: toRate, ratingIsEstimate: unseen > 0, lensCalls, rateCalls, calls, limit, askFirst: calls > limit };
+  return { itemsNeedingReview: unseen, itemsToRate: toRate, itemsToRedo: toRedo, ratingIsEstimate: unseen > 0, lensCalls, rateCalls, calls, limit, askFirst: calls > limit };
 }

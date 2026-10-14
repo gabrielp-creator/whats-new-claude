@@ -62,7 +62,7 @@ function main() {
     }
     must("verify", step("verify.mjs"));
     if (decision.run && left > 0) must("rate-run", step("rate-run.mjs", { WNC_MAX_CALLS: String(left) }));
-    if (decision.waiting) record.waiting = { items: Math.max(plan.itemsNeedingReview || 0, plan.itemsToRate || 0), calls: plan.calls };
+    if (decision.waiting) record.waiting = { items: Math.max(plan.itemsNeedingReview || 0, plan.itemsToRate || 0), calls: plan.calls, redo: plan.itemsToRedo || 0 };
     must("build-page", step("build-page.mjs"));
   } catch (e) {
     record.incomplete = true;

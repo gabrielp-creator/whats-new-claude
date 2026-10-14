@@ -278,3 +278,7 @@ test("P-12: a rater that disagrees with the band is shown, never hidden", () => 
   const md = buildBrief("app", [entry("c:7", "act", {}, { score: 7, lo: 7, hi: 10, raw: 3, do: "ignore", disagrees: true })], opts);
   assert.match(md, /^The rater disagrees with this band: it gave 3 and said ignore\.$/m);
 });
+
+test("B-65: a brief marks a rating made before 0.3.1", () => {
+  assert.match(buildBrief("app", [entry("c:8", "act", {}, { ratedBefore: "0.3.1" })], opts), /^Rated before 0\.3\.1: the next \/whats-new run can rate it again\.$/m);
+});

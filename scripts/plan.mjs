@@ -19,5 +19,7 @@ const perLens = ["impact", "type", "risk"].map((l) => {
   const done = new Set(readJsonl(join(DATA, `lens-${l}.jsonl`)).map((r) => r.id));
   return split(items.filter((i) => !done.has(i.id)));
 });
-const unratedKnown = split(loadRows(DATA).rows.filter((r) => r.toRate)); // rate-run.mjs's own filter: unrated or stale
-console.log(JSON.stringify({ ...planCalls({ perLens, unratedKnown, limit: config.maxCallsWithoutAsking }), model: config.model }, null, 2));
+const todo = loadRows(DATA).rows.filter((r) => r.toRate); // rate-run.mjs's own filter: unrated or stale
+const unratedKnown = split(todo);
+const toRedo = todo.filter((r) => r.redo).length; // B-65: rated before, not new
+console.log(JSON.stringify({ ...planCalls({ perLens, unratedKnown, toRedo, limit: config.maxCallsWithoutAsking }), model: config.model }, null, 2));

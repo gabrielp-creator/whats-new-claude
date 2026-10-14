@@ -22,8 +22,10 @@ try {
     const config = raw && mergeOptions(raw, options);
     let project = null;
     try { project = config && projectForCwd(config, process.env.CLAUDE_PROJECT_DIR || input.cwd || process.cwd()); } catch {}
-    const out = hookOutput(reminderText({ summary: readJson(join(dir, "summary.json"), null), config, project,
-      updater: readJson(join(dir, "updater.json"), null), options }));
+    const updater = readJson(join(dir, "updater.json"), null), notices = readJson(join(dir, "notices.json"), {});
+    const out = hookOutput(reminderText({ summary: readJson(join(dir, "summary.json"), null), config, project, updater, options, notices }));
     if (out) process.stdout.write(out + "\n");
+    // B-65: the redo explanation is shown once; later reminders give only the count.
+    if (out && updater?.waiting?.redo > 0 && !notices.redoExplained) writeJson(join(dir, "notices.json"), { ...notices, redoExplained: true });
   }
 } catch {}

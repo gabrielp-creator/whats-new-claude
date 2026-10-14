@@ -55,7 +55,8 @@ export function loadRows(dir, { evidence = true, now = Date.now() } = {}) {
     const rating = rateRow(withEvidence, evs, stored, models);
     const open = rating.ratings.some((x) => x.project && !x.installed);
     const toRate = needsOrchestrator(withEvidence) && open && (!stored || staleRating(withEvidence, stored, evs, models));
-    return { ...withEvidence, ...rating, toRate };
+    // redo: it has an answer, given under other bounds or an earlier version (B-65), not a new item.
+    return { ...withEvidence, ...rating, toRate, redo: toRate && Boolean(stored) };
   });
   // B-4: code-made retirement rows (Gabriel, 2026-10-14), never sent to the rater.
   for (const row of retirementRows(models, new Date(now).toISOString().slice(0, 10))) {

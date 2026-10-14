@@ -334,6 +334,11 @@ export function bounds(row, project, evs, models) {
   return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, heldSoon, fresh, confirm, alias, ...(installed ? { installed } : {}) };
 }
 
+// B-65 (P-20): answers from a plugin version before this one were given under other bounds and payload,
+// so they are marked and rated again (one line of the run's cost question). rate-run.mjs stamps each.
+export const RATING_SCHEME = "0.3.1";
+const ratedBefore = (v) => !/^\d+\.\d+\.\d+$/.test(String(v || "")) || olderThan(String(v), RATING_SCHEME);
+
 // B-42 (P-19, P-22): the one state a rating is in, shared by the page, the terminal and the brief.
 export const STATES = STATE_NAME; // the phrases live with the brief, which the page inlines
 const stateOf = (b) => (b.installed ? "installed"
@@ -370,7 +375,7 @@ export function rateRow(row, evs, orch, models) {
     if (b.priceOnly && act === "model-refresh") act = "read"; // a price or limit change needs no model change (B-57)
     return {
       project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note, ...(b.installed ? { installed: b.installed } : {}), ...(b.heldSoon ? { heldSoon: true } : {}),
-      state: stateOf(b), ...(b.alias ? { alias: b.alias } : {}),
+      state: stateOf(b), ...(b.alias ? { alias: b.alias } : {}), ...(a && ratedBefore(orch.version) ? { ratedBefore: RATING_SCHEME } : {}),
       score: score ?? codeScore(row, b),
       provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade && !b.installed,
       do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)
@@ -424,6 +429,7 @@ export const seenFor = (row, evs, models) =>
 export function staleRating(row, stored, evs, models) {
   const answered = new Set((stored?.ratings || []).map((a) => a.project));
   const now = seenFor(row, evs, models), then = stored?.seen || seenFor(row, evs, undefined);
-  return row.projects.filter((p) => !bounds(row, p, evs, models).installed)
-    .some((p) => !answered.has(p) || !then[p] || then[p].join("|") !== now[p].join("|"));
+  const live = row.projects.filter((p) => !bounds(row, p, evs, models).installed);
+  if (stored && live.length && ratedBefore(stored.version)) return true;
+  return live.some((p) => !answered.has(p) || !then[p] || then[p].join("|") !== now[p].join("|"));
 }

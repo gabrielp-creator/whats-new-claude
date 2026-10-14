@@ -276,6 +276,7 @@ function evidenceTags(v, r) {
   if (!r) return;
   // B-42 (P-22): the same phrase for a state as the brief and the terminal (brief lib STATE_NAME).
   if (r.state && STATE_NAME[r.state]) v.append(el("span", r.state === "confirm" || r.state === "act" ? "tag ok" : "tag", STATE_NAME[r.state]));
+  if (r.ratedBefore) v.append(el("span", "tag", `rated before ${r.ratedBefore}`)); // B-65
   if (r.disagrees) v.append(el("span", "tag", `rater disagrees (gave ${Number(r.raw)}${r.do === "ignore" ? ", ignore" : ""})`)); // P-12
   if (r.evidence === "confirmed" && r.foundIn.length) v.append(el("span", "tag ok", `found: ${r.foundIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`));
   else if (r.evidence === "not-found") v.append(el("span", "tag", "names not seen in this project's files"));

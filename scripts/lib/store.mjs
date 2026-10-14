@@ -7,6 +7,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 export const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+// The plugin's own version, stamped on each rating answer (B-65).
+export const PLUGIN_VERSION = (() => { try { return JSON.parse(readFileSync(join(PLUGIN_ROOT, ".claude-plugin", "plugin.json"), "utf8")).version || ""; } catch { return ""; } })();
 
 export function dataDir(argv = process.argv) {
   const i = argv.indexOf("--data");

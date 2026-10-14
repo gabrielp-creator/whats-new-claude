@@ -163,3 +163,9 @@ test("P-12: the terminal list says when the rater disagrees with the band", () =
   const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 7, state: "act", note: "", foundIn: [], evidence: "confirmed", disagrees: true }] }];
   assert.match(formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" }), /rater disagrees/);
 });
+
+test("B-65: the terminal list marks a rating made before 0.3.1", () => {
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 6, state: "act", note: "", foundIn: [], evidence: "unchecked", ratedBefore: "0.3.1" }] }];
+  assert.match(formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" }), /rated before 0\.3\.1/);
+});

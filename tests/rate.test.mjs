@@ -441,7 +441,7 @@ test("seenFor records each project's range and evidence as the orchestrator saw 
 
 test("staleRating: same range and evidence = fresh; a changed range or evidence = stale", () => {
   const r = { ...launch, projects: ["app"] };
-  const stored = { id: "x:1", ratings: [{ project: "app", score: 8 }], seen: seenFor(r, missOpus, inv(["claude-opus-4-8"])) };
+  const stored = { id: "x:1", version: "0.3.1", ratings: [{ project: "app", score: 8 }], seen: seenFor(r, missOpus, inv(["claude-opus-4-8"])) };
   assert.equal(staleRating(r, stored, missOpus, inv(["claude-opus-4-8"])), false);
   assert.equal(staleRating(r, stored, foundOpus, inv(["claude-opus-5-5"])), true, "the project moved to the new model");
   assert.equal(staleRating({ ...r, projects: ["app", "site"] }, stored, missOpus, inv(["claude-opus-4-8"])), true, "a project with no answer yet");
@@ -453,7 +453,7 @@ test("staleRating for answers stored before 0.3.0 (no seen): stale only where th
   assert.equal(staleRating(r, legacy, foundOpus, inv(["claude-opus-5-5"])), true, "adopted: 7 to 10 became 5");
   assert.equal(staleRating(r, legacy, missOpus, inv([])), true, "no model id or alias: unknown, no longer the not-found cap (B-39)");
   const retire = { ...row({ type: "breaking-or-deprecation", risk: "deprecation", text: "`claude-sonnet-4-5` retires" }), projects: ["app"] };
-  assert.equal(staleRating(retire, legacy, [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"])), false, "retirements are unchanged");
+  assert.equal(staleRating(retire, legacy, [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"])), true, "B-65: an answer with no version stamp is rated again, whatever its range");
 });
 
 // B-40 (AK 4): a skill's new default, or a default-model change, shapes code Claude writes from now
@@ -782,7 +782,7 @@ test("B-52: a project in the group never waits for or asks the rater", () => {
   assert.equal(app.installed, "2.1.296");
   assert.equal(app.provisional, false, "nothing to wait for");
   assert.equal(web.provisional, true, "web runs an older version: rated as now");
-  const stored = { id: "x:1", ratings: [{ project: "web", score: 6 }], seen: { app: [7, 10, "unchecked"], web: seenFor(fix, [], models).web } };
+  const stored = { id: "x:1", version: "0.3.1", ratings: [{ project: "web", score: 6 }], seen: { app: [7, 10, "unchecked"], web: seenFor(fix, [], models).web } };
   assert.equal(staleRating(fix, stored, [], models), false, "app's band moved into the group: no new call for it");
   assert.equal(staleRating({ ...fix, projects: ["app"] }, null, [], models), false, "an item with every project in the group is never rated");
 });
@@ -884,4 +884,19 @@ test("B-42: each rating carries one state: confirm, act, later, not-used or inst
   assert.equal(st(ccFix(), [], onCC("2.1.296")), "installed");
   const sites = rateRow({ ...sonnetLaunch, projects: ["app"] }, [], null, sonnetAliasOnly).ratings[0];
   assert.deepEqual(sites.alias, { alias: "sonnet", file: "scripts/run.mjs", line: 14 }, "the alias to confirm, for the prompt");
+});
+
+// B-65 (P-20): each answer carries the plugin version that gave it; older ones are marked and redone.
+import { RATING_SCHEME } from "../scripts/lib/rate.mjs";
+test("B-65: an answer from before 0.3.1 is marked 'rated before' and is stale; a 0.3.1 answer is not", () => {
+  assert.equal(RATING_SCHEME, "0.3.1");
+  const r = { ...row({ urgencyLabel: "soon" }), projects: ["app"] };
+  const answer = (version) => ({ id: "x:1", ratings: [{ project: "app", score: 6, do: "read", why: "w" }], seen: seenFor(r, [], undefined), ...(version ? { version } : {}) });
+  assert.equal(rateRow(r, [], answer(null)).ratings[0].ratedBefore, "0.3.1", "no stamp: rated before 0.3.1");
+  assert.equal(rateRow(r, [], answer("0.3.0")).ratings[0].ratedBefore, "0.3.1");
+  assert.equal(rateRow(r, [], answer("0.3.1")).ratings[0].ratedBefore, undefined);
+  assert.equal(rateRow(r, [], answer("0.10.0")).ratings[0].ratedBefore, undefined, "compared as numbers");
+  assert.equal(rateRow(r, [], null).ratings[0].ratedBefore, undefined, "never rated: nothing to mark");
+  assert.equal(staleRating(r, answer("0.3.0"), [], undefined), true, "same range and evidence, older version: rated again");
+  assert.equal(staleRating(r, answer("0.3.1"), [], undefined), false);
 });

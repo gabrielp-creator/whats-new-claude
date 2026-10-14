@@ -100,3 +100,12 @@ test("B-27: with something to say and no published page yet, it points to the fr
   assert.doesNotMatch(say({ project: "app" }), /\/whats-new page/, "once published, the link replaces the hint");
   assert.equal(reminderText({ summary: sum({ top: {}, topTotal: 0 }), config: { minRating: 8 } }, NOW), "", "nothing to say: still quiet");
 });
+
+test("B-65 (P-20): re-rates are never called new; the explanation shows once, the count every time", () => {
+  const first = say({ updater: { waiting: { items: 40, calls: 4, redo: 30 } } });
+  assert.match(first, /10 new items and 30 items rated before 0\.3\.1 are waiting for \/whats-new \(about 4 Claude calls, over your background budget\)\./);
+  assert.match(first, /0\.3\.1 changed how ratings are bounded/);
+  const later = say({ updater: { waiting: { items: 30, calls: 3, redo: 30 } }, notices: { redoExplained: true } });
+  assert.match(later, /30 items rated before 0\.3\.1 are waiting for \/whats-new \(about 3 Claude calls/);
+  assert.doesNotMatch(later, /new items|changed how ratings are bounded/);
+});

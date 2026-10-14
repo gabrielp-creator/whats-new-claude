@@ -3,6 +3,7 @@
 // Tested in tests/reminder.test.mjs.
 import { LOCK_STALE_MS } from "./updater.mjs";
 import { COUNTERS } from "./counters.mjs";
+import { RATING_SCHEME } from "./rate.mjs";
 
 const DAY = 864e5;
 export const STALE_DAYS = 7;
@@ -12,7 +13,8 @@ const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 // summary: <data>/summary.json from build-page; updater: <data>/updater.json from update.mjs;
 // project: the configured project the session is in, if any. options: the /config settings, which
 // are all there is before setup.
-export function reminderText({ summary, config, project, updater, options }, now = Date.now()) {
+// notices: <data>/notices.json, what the reminder has already explained once.
+export function reminderText({ summary, config, project, updater, options, notices }, now = Date.now()) {
   if (!config) return options?.reminder === false ? "" : "What's New for Claude is installed. Run /whats-new setup to pick your projects."; // B-1
   if (config.reminder === false) return "";
   if (!summary) return "What's New for Claude is set up but has not run yet. Run /whats-new to check Anthropic's latest releases against your projects.";
@@ -33,7 +35,13 @@ export function reminderText({ summary, config, project, updater, options }, now
   const dead = updater?.running && !updater.finishedAt && now - Date.parse(updater.lastAttempt) > LOCK_STALE_MS;
   if (updater?.incomplete || dead) parts.push("The last background update did not finish; run /whats-new to see why.");
   const w = updater?.waiting;
-  if (w && Number(w.items) > 0) parts.push(`${Number(w.items)} new items are waiting for /whats-new (about ${Number(w.calls) || 0} Claude calls, over your background budget).`);
+  if (w && Number(w.items) > 0) {
+    // B-65 (P-20): ratings to redo are never called new; why they are redone is said once.
+    const redo = Math.min(Number(w.redo) || 0, Number(w.items)), fresh = Number(w.items) - redo;
+    const what = [fresh && `${fresh} new item${fresh === 1 ? "" : "s"}`, redo && `${redo} item${redo === 1 ? "" : "s"} rated before ${RATING_SCHEME}`].filter(Boolean).join(" and ");
+    parts.push(`${what} ${fresh + redo === 1 ? "is" : "are"} waiting for /whats-new (about ${Number(w.calls) || 0} Claude calls, over your background budget).`);
+    if (redo && !notices?.redoExplained) parts.push(`${RATING_SCHEME} changed how ratings are bounded, so ratings made before it are redone the next time you run /whats-new; until then they keep their old scores.`);
+  }
   // Silent-failure counters that jumped since the run before (lib/counters.mjs): code's labels, numbers.
   const jumped = (summary.counterJumps || []).filter((j) => Object.hasOwn(COUNTERS, j?.key) && Number.isFinite(j.before) && Number.isFinite(j.now));
   if (jumped.length) parts.push(`Check: ${jumped.map((j) => `${COUNTERS[j.key]} rose from ${j.before} to ${j.now}`).join("; ")}.`);

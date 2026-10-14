@@ -7,7 +7,7 @@
 // Usage: node rate-run.mjs --max-calls <n> [--data <dir>]
 import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, readJsonl, readJson, PLUGIN_ROOT } from "./lib/store.mjs";
+import { dataDir, readJsonl, readJson, PLUGIN_ROOT, PLUGIN_VERSION } from "./lib/store.mjs";
 import { loadConfig, projectsProfile } from "./lib/config.mjs";
 import { runClaude, callsUsed, callLimit } from "./lib/claude.mjs";
 import { loadRows } from "./lib/rows.mjs";
@@ -32,7 +32,7 @@ async function judge(batch) {
   const raw = await runClaude(`<projects>\n${projectsProfile(config)}\n</projects>\n<items>\n${safeJson(payload)}\n</items>`,
     { model: config.model, promptFile, usageLog: join(DATA, "usage.jsonl"), label: "rate" });
   const byId = new Map(jsonArray(raw).map((a) => [a?.id, a]));
-  return batch.map((r) => ({ ...checkRateAnswer(byId.get(r.id), r), model: config.model, seen: seenFor(r, evs.get(r.id) || [], models) }));
+  return batch.map((r) => ({ ...checkRateAnswer(byId.get(r.id), r), model: config.model, version: PLUGIN_VERSION, seen: seenFor(r, evs.get(r.id) || [], models) }));
 }
 
 console.log(`rate: ${todo.length} items in ${Math.ceil(todo.length / RATE_BATCH)} batches`);
