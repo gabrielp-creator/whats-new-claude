@@ -7,7 +7,7 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { dataDir, positional, readJsonl, readJson, writeJsonl, writeJson } from "./lib/store.mjs";
-import { sinceFor, mergeItems, recordSource, heartbeatWarnings } from "./lib/incremental.mjs";
+import { sinceFor, mergeItems, recordSource, heartbeatWarnings, clampDate } from "./lib/incremental.mjs";
 import { pluginProvenance, commitProvenance } from "./lib/provenance.mjs";
 import { safeUrl } from "./lib/brief.mjs";
 import { get, errLine } from "./lib/net.mjs";
@@ -104,7 +104,8 @@ async function githubCommits(repo, source, since) {
   for (let page = 1; page <= 5; page++) {
     const commits = await get(`https://api.github.com/repos/${repo}/commits?per_page=100&page=${page}&since=${since.toISOString()}`, { json: true });
     for (const c of commits) items.push({
-      id: `${source}:${c.sha.slice(0, 7)}`, source, date: c.commit.author.date.slice(0, 10),
+      // when it landed (committer), not the author's own date, which a rebase keeps and anyone can set
+      id: `${source}:${c.sha.slice(0, 7)}`, source, date: (c.commit.committer?.date || c.commit.author.date).slice(0, 10),
       title: c.commit.message.split("\n")[0].slice(0, 200), text: "", url: c.html_url,
       provenance: await commitProvenance(repo, { sha: c.sha, message: c.commit.message }, get),
     });
@@ -170,6 +171,7 @@ for (const [name, job] of Object.entries(SOURCES)) {
     const fresh = await job(since);
     for (const it of fresh) {
       it.url = safeUrl(it.url); // links are fetched data: https on the source hosts only
+      it.date = clampDate(it.date); // so is the date: never in the future
       it.text = String(it.text || "").slice(0, TEXT_MAX);
       it.tripwires = tripwireHits(it, terms);
     }

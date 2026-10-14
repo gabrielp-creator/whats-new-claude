@@ -7,6 +7,13 @@ export const OVERLAP_DAYS = 2; // re-read a little of the last window; ids dedup
 // Sources that publish often enough that silence means something broke (days of allowed silence).
 export const HEARTBEAT_DAYS = { "claude-code": 7, "platform-release-notes": 30, "agent-sdk-ts": 21 };
 
+// An item date (YYYY-MM-DD) is fetched data: a future one would sit inside every "last N days"
+// window, so it is clamped to today (B-66). Missing dates pass through.
+export function clampDate(date, now = Date.now()) {
+  const today = new Date(now).toISOString().slice(0, 10);
+  return typeof date === "string" && date > today ? today : date;
+}
+
 export function sinceFor(state, source, firstRunDays, now = Date.now()) {
   const last = state?.sources?.[source]?.lastSuccess;
   return new Date(last ? Date.parse(last) - OVERLAP_DAYS * DAY : now - firstRunDays * DAY);

@@ -8,6 +8,13 @@
   links to it comes from the anthropics repo itself (or none does: a direct push); before, the commit
   message's "(#N)" decided, which the commit's author writes, and a commit without one counted as
   first-party. Items fetched before this version keep their stored label.
+- Hardening against one fetched item steering others: fork and third-party items are reviewed in
+  their own batches, never alongside official ones (a plan may count one more call per lens). When a
+  batch comes back with more than 3 items flagged as containing instructions, each flagged item is
+  reviewed again on its own, within the same call cap; the injected item stays flagged. An official
+  item that names a security, breaking, deprecation or retirement change is never in the lowest band,
+  whatever the reviews answered (18 of 3646 stored items on 2026-10-13). Commits are dated when they
+  landed, not by their author's date, and no item date can be in the future.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each

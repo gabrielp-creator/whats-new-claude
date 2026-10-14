@@ -4,6 +4,9 @@
 
 const RISKY_TYPES = new Set(["model", "security", "breaking-or-deprecation"]);
 const FYI_ONLY = new Set(["third-party", "external-fork"]);
+// FYI-only: from a third-party plugin or a fork. Takes an item (provenance) or a merged row (fyiOnly).
+export const isFyi = (x) => (typeof x?.fyiOnly === "boolean" ? x.fyiOnly : FYI_ONLY.has(x?.provenance));
+const SERIOUS = new Set(["security", "breaking", "deprecation", "retired"]);
 const STRENGTH = { high: 3, medium: 2, low: 1 };
 const WORDS = { remov: "removed", renam: "renamed", retir: "retired", deprecat: "deprecation", migrat: "migration" };
 
@@ -17,12 +20,12 @@ export function tripwireLabel(pattern) {
 // Urgency: how soon the user should look. Exposed breakage first, then security, model and
 // deprecation events that touch their work, then behaviour changes and strong effects.
 const EXPOSED = { breaking: 100, deprecation: 95, security: 90, "behavior-change": 60 };
-function urgencyOf({ exposed, risk, type, hasEffect, strength, newWork, tripwire }) {
+function urgencyOf({ exposed, risk, type, hasEffect, strength, newWork, tripwire, serious }) {
   let u = exposed ? EXPOSED[risk] : 0;
   if (hasEffect && type === "model") u = Math.max(u, 85);
   if (hasEffect && (type === "breaking-or-deprecation" || type === "security")) u = Math.max(u, 80);
   if (hasEffect) u = Math.max(u, { high: 55, medium: 35, low: 15 }[strength]);
-  if (newWork) u = Math.max(u, 10);
+  if (newWork || serious) u = Math.max(u, 10);
   if (tripwire) u = Math.max(u, 5);
   return u + (hasEffect ? STRENGTH[strength] : 0); // strength breaks ties inside a tier
 }
@@ -47,10 +50,14 @@ export function merge(item, impact, type, risk) {
   if (hasEffect && impact.strength !== "low" && type.action === "ignore") flags.push("The impact lens rates it useful, but the type lens suggests ignoring it.");
   if (impact.injection || type.injection || risk.injection) flags.push("A lens found instructions aimed at an AI in the source text.");
 
-  const fyiOnly = FYI_ONLY.has(item.provenance);
+  const fyiOnly = isFyi({ provenance: item.provenance });
   const action = fyiOnly && type.action === "try-feature" ? "read" : type.action;
+  // A first-party item naming a security, breaking, deprecation or retirement change is never in the
+  // "none" band, whatever the lenses answered: one injected item in a batch could otherwise steer it
+  // there (B-66). "removed" and "renamed" match incidentally too often to count.
+  const serious = !fyiOnly && tripwires.some((t) => SERIOUS.has(t));
   const urgency = urgencyOf({ exposed, risk: risk.risk, type: type.type, hasEffect, strength: impact.strength,
-    newWork: impact.new_work, tripwire: tripwires.length > 0 });
+    newWork: impact.new_work, tripwire: tripwires.length > 0, serious });
   const urgencyLabel = labelFor(urgency);
 
   return {
