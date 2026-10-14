@@ -191,6 +191,8 @@ export function buildBrief(project, items, { date, dir, rootLabel = "your worksp
       if (rating) {
         out.push("", `Rated ${rating.score} for ${project} (${bandOf(rating)}).${rating.why ? ` Why: ${oneLine(rating.why)}` : ""}`);
         if (rating.note) out.push(`Code's check: ${oneLine(rating.note)}`);
+        // P-12: shown, never used to move the item.
+        if (rating.disagrees) out.push(`The rater disagrees with this band: it gave ${Number(rating.raw)}${rating.do === "ignore" ? " and said ignore" : ""}.`);
         if (e.actor.riskWhy && rating.evidence === "confirmed") out.push(`Risk: ${oneLine(e.actor.riskWhy)}`);
       } else {
         if (lead.why) out.push("", `Why it was flagged: ${oneLine(lead.why)}`);

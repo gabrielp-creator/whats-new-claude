@@ -273,3 +273,8 @@ test("B-42: a hook or settings change found by the profile gets a prompt naming 
   assert.match(p, /Recommend one of: no action, a re-test, or a change/);
   assert.doesNotMatch(p, /effortLevel/);
 });
+
+test("P-12: a rater that disagrees with the band is shown, never hidden", () => {
+  const md = buildBrief("app", [entry("c:7", "act", {}, { score: 7, lo: 7, hi: 10, raw: 3, do: "ignore", disagrees: true })], opts);
+  assert.match(md, /^The rater disagrees with this band: it gave 3 and said ignore\.$/m);
+});

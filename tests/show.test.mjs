@@ -157,3 +157,9 @@ test("P-22: the terminal list names each pick's state with the brief's phrase", 
   const text = formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" });
   assert.match(text, /Confirm handled \| /);
 });
+
+test("P-12: the terminal list says when the rater disagrees with the band", () => {
+  const now = Date.parse("2026-10-14T12:00:00Z");
+  const rows = [{ id: "a", title: "v2.1.290", text: "Fixed a thing", date: "2026-10-12", url: "", ratings: [{ project: "app", score: 7, state: "act", note: "", foundIn: [], evidence: "confirmed", disagrees: true }] }];
+  assert.match(formatList(hereList(rows, { project: "app", min: 5, days: 7, now }), { heading: "app", lastChecked: "today", nonce: "x" }), /rater disagrees/);
+});
