@@ -587,3 +587,78 @@ test("B-44: a launch naming its predecessor for comparison is an upgrade for the
   assert.equal(both.evidence, "adopted", "mixed ids still count as adopted (Gabriel, 2026-10-09)");
   assert.match(both.note, /already uses claude-opus-5-5 \(also claude-opus-5\)/);
 });
+
+// B-45 (RF 6, NC 2, SU 2): a breaking change on a model in use is confirmed with the model's file and
+// line; announced with a launch the project already runs, it is soon and asks to confirm it is handled.
+import { launchedWith } from "../scripts/lib/rate.mjs";
+const opusThinking = row({ source: "platform-release-notes", date: "2026-09-22", type: "breaking-or-deprecation", risk: "breaking",
+  text: "On Claude Opus 5.5, thinking can't be disabled: thinking: {\"type\": \"disabled\"} returns a 400 error. tool_choice types any and tool also return a 400 error, as on Claude Fable 5.1; use auto." });
+const fableLens = { alias: "fable", family: "fable", file: ".claude/lenses/skeptic.md", line: 3 };
+const runs55 = { app: { models: ["claude-opus-5-5"], used: [{ id: "claude-opus-5-5", file: "src/models.ts", line: 33 }], aliases: [fableLens], partial: false } };
+
+test("B-45: a breaking change announced with a launch the project runs: confirmed with file:line, soon, confirm handled (RF 6)", () => {
+  const b = bounds({ ...opusThinking, withLaunch: ["claude-opus-5-5"] }, "app", [], runs55);
+  assert.equal(b.evidence, "confirmed", "the pinned id decides before the fable alias named in passing");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon);
+  assert.deepEqual(b.foundIn, [{ term: "claude-opus-5-5", file: "src/models.ts:33" }]);
+  assert.match(b.note, /already runs claude-opus-5-5 \(src\/models\.ts:33\), launched with this change: confirm it is handled/);
+});
+
+test("B-45: the same change with no launch nearby is confirmed and keeps its band", () => {
+  const b = bounds(opusThinking, "app", [], runs55);
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.urgent);
+  assert.match(b.note, /uses claude-opus-5-5 \(src\/models\.ts:33\)/);
+});
+
+test("B-45: code written for the model in use is confirmed for the upgrade path (NC 2)", () => {
+  const haiku = row({ type: "breaking-or-deprecation", risk: "breaking", withLaunch: ["claude-haiku-5-5"],
+    text: "Code written for Claude Haiku 4.5 can break on Claude Haiku 5.5. Manual extended thinking (budget_tokens) returns a 400 error." });
+  const b = bounds(haiku, "app", [], { app: { models: ["claude-haiku-4-5"], used: [{ id: "claude-haiku-4-5", file: "src/stage.ts", line: 77 }], aliases: [], partial: false } });
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.soon, "the upgrade path: never above the upgrade itself (B-36)");
+  assert.match(b.note, /uses claude-haiku-4-5 \(src\/stage\.ts:77\); applies when you move to claude-haiku-5-5/);
+});
+
+test("B-45: a keyword hit on a change scoped to a model in use also names the model (SU 2)", () => {
+  const b = bounds(effortItem, "app", effortHit, { app: { models: ["claude-opus-4-8"], used: [{ id: "claude-opus-4-8", file: "settings.json", line: 98 }], aliases: [], partial: false } });
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual(b.foundIn, [{ term: "claude-opus-4-8", file: "settings.json:98" }, { term: "effortLevel", file: "settings.json" }]);
+});
+
+test("B-45: alias exposure to a breaking change follows the item's scope, not every model it names", () => {
+  const opusAlias = { alias: "opus", family: "opus", file: "lenses/l.md", line: 3 };
+  const b = bounds(sonnetBreak, "app", [], { app: { models: ["claude-sonnet-4-6"], aliases: [opusAlias], partial: false } });
+  assert.equal(b.evidence, "other-models", "Opus 4.8 is named only in the advisor sentence");
+  const s = bounds(sonnetBreak, "app", [], { app: { models: [], aliases: [{ ...opusAlias, alias: "sonnet", family: "sonnet" }], partial: false } });
+  assert.equal(s.evidence, "alias");
+});
+
+test("B-45: launchedWith marks the ids first-party launches announced within a day of an item", () => {
+  const launchRow = { id: "p:1", source: "platform-release-notes", date: "2026-09-22", type: "model", risk: "none", fyiOnly: false, text: "We've launched Claude Opus 5.5 (claude-opus-5-5) (Claude Opus 5 is $5 / $25)" };
+  const same = { id: "p:2", date: "2026-09-22" }, later = { id: "p:3", date: "2026-09-29" }, before = { id: "p:4", date: "2026-09-21" };
+  const fork = { ...launchRow, id: "f:1", fyiOnly: true, text: "Added Claude Haiku 5.5" };
+  const w = launchedWith([launchRow, same, later, before, fork]);
+  assert.deepEqual(w.get("p:2"), ["claude-opus-5-5"], "the newest named model only (B-44)");
+  assert.deepEqual(w.get("p:4"), ["claude-opus-5-5"], "a day either side");
+  assert.deepEqual(w.get("p:3") || [], [], "a week later is not the launch announcement");
+  const skill = { ...launchRow, id: "s:1", source: "skills", date: "2026-09-29" };
+  assert.equal(launchedWith([skill, later]).get("p:3"), undefined, "a skill commit making a model its default is not a launch announcement");
+});
+
+test("B-45: a model confirmed in scope lifts a not-found cap left by an unrelated name", () => {
+  const todo = row({ source: "claude-code", type: "breaking-or-deprecation", risk: "breaking",
+    text: "Todo/task-tracking tools are no longer available on Opus 4.8, Sonnet 5, Fable 5, Mythos 5, and newer models; set `CLAUDE_CODE_ENABLE_TODO_TOOLS=1` to bring them back" });
+  const b = bounds(todo, "app", [ev({ checked: ["CLAUDE_CODE_ENABLE_TODO_TOOLS"], found: [] })], { app: { models: ["claude-opus-5-5"], used: [{ id: "claude-opus-5-5", file: "settings.json", line: 98 }], aliases: [], partial: false } });
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.urgent);
+});
+
+test("B-45: a launch nearby counts only when the item names the launched model, not when a range covers it", () => {
+  const gateway = row({ source: "claude-code", type: "breaking-or-deprecation", risk: "behavior-change", withLaunch: ["claude-sonnet-5-5"],
+    text: "Changed sessions behind a custom `ANTHROPIC_BASE_URL` to use the 1M context window of models that have one (Opus 4.7+, Sonnet 5+, Fable)" });
+  const b = bounds(gateway, "app", [], runs55);
+  assert.equal(b.evidence, "confirmed");
+  assert.deepEqual([b.lo, b.hi], BANDS.urgent);
+  assert.doesNotMatch(b.note, /move to|launched with/);
+});

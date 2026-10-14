@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { modelTies, sdkTies, API, RUNTIME } from "../scripts/lib/ties.mjs";
 import { loadRows } from "../scripts/lib/rows.mjs";
+import { ANNOUNCES } from "../scripts/lib/rate.mjs";
 import { readJsonl } from "../scripts/lib/store.mjs";
 
 const inv = (ids, extra = {}) => ({ models: ids, used: ids.map((id, n) => ({ id, file: "src/a.ts", line: n + 1 })), aliases: [], mentioned: [], claudeCalls: [], ...extra });
@@ -79,7 +80,7 @@ test("every source id the tie rule names is one fetch.mjs writes", () => {
   for (const m of fetch.matchAll(/^\s+"?([\w-]+)"?: \(s\) => github\w+\("[^"]+", "([\w-]+)"/gm)) written.add(m[2]);
   for (const section of fetch.match(/anthropic\\\.com\\\/\(([\w|]+)\)/)[1].split("|")) written.add(`anthropic-${section}`);
   assert.ok(written.has("claude-code") && written.has("platform-release-notes"), `parsed ${[...written]}`);
-  for (const id of [...API, ...RUNTIME]) assert.ok(written.has(id), `${id} is not a source fetch.mjs writes`);
+  for (const id of [...API, ...RUNTIME, ...ANNOUNCES]) assert.ok(written.has(id), `${id} is not a source fetch.mjs writes`);
 });
 
 const jsonl = (rows) => rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
@@ -141,6 +142,19 @@ test("B-57 end to end: a caching price change is tied by model and checked for c
   assert.match(by.app.note, /check your price table: this project uses claude-sonnet-5-5 \(src\/llm\.ts:1\)/);
   assert.deepEqual([by.web.evidence, by.web.lo, by.web.hi], ["not-found", 2, 5.9]);
   assert.match(by.web.note, /sends no `cache_control`/);
+});
+
+test("B-45: loadRows marks the models launched within 7 days of each item (withLaunch)", () => {
+  const data = mkdtempSync(join(tmpdir(), "wnc-data-"));
+  const at = (id, date, text) => ({ id, source: "platform-release-notes", date, title: "Claude Platform release notes", text, url: "https://platform.claude.com/docs/en/release-notes/overview", provenance: "anthropic-release", tripwires: [] });
+  const items = [at("p:1", "2026-10-07", "We've launched Claude Haiku 5.5 (claude-haiku-5-5)."), at("p:2", "2026-10-07", HAIKU_BREAKS), at("p:3", "2026-10-30", HAIKU_BREAKS)];
+  writeFileSync(join(data, "items.jsonl"), jsonl(items));
+  writeFileSync(join(data, "lens-impact.jsonl"), jsonl(items.map((i) => ({ id: i.id, effect: "improves", projects: [], new_work: false, strength: "low", why: "w", injection: false }))));
+  writeFileSync(join(data, "lens-type.jsonl"), jsonl(items.map((i, n) => ({ id: i.id, type: n ? "breaking-or-deprecation" : "model", action: "read", injection: false }))));
+  writeFileSync(join(data, "lens-risk.jsonl"), jsonl(items.map((i, n) => ({ id: i.id, risk: n ? "breaking" : "none", exposed: false, why: "rw", injection: false }))));
+  const rows = new Map(loadRows(data, { evidence: false }).rows.map((r) => [r.id, r]));
+  assert.deepEqual(rows.get("p:2").withLaunch, ["claude-haiku-5-5"]);
+  assert.equal(rows.get("p:3").withLaunch, undefined, "23 days later");
 });
 
 // B-58 (LNC 5): SDK items reach only projects that have that SDK, and every project that has it.

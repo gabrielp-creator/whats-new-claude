@@ -90,11 +90,17 @@ const parsed = (ids) => dedupe(ids.map(parseModel).filter(Boolean));
 // A launch against what a project uses. adopted: it already uses a launched model (older ones of the
 // same family still in use are listed); upgrade: it uses an older model of a launched family;
 // other-models: only other families; unknown: no model on one side or the other.
+// The newest model named per family: what a launch launches (B-44).
+export function newestByFamily(refs) {
+  const newest = new Map();
+  for (const r of refs) if (!newest.has(r.family) || cmp(r, newest.get(r.family)) > 0) newest.set(r.family, r);
+  return newest;
+}
+
 export function launchStatus(refs, projectIds) {
   const proj = parsed(projectIds);
   if (!refs.length || !proj.length) return { status: "unknown", uses: [], older: [] };
-  const newest = new Map();
-  for (const r of refs) if (!newest.has(r.family) || cmp(r, newest.get(r.family)) > 0) newest.set(r.family, r);
+  const newest = newestByFamily(refs);
   const older = proj.filter((p) => newest.has(p.family) && cmp(p, newest.get(p.family)) < 0).map((p) => p.id);
   // Only the newest model named per family is the launch: "Opus 5.5 (Opus 5 is $5 / $25)" launches
   // 5.5, and a project on Opus 5 is an upgrade candidate, not an adopter (B-44, RF 1).

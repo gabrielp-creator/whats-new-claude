@@ -3,7 +3,7 @@
 // Fetched text can move an item within its band, never out of it. Tested in tests/rate.test.mjs.
 
 import { injectionFlag } from "./batch.mjs";
-import { parseModel, modelRefs, launchStatus, isLaunchText } from "./models.mjs";
+import { parseModel, modelRefs, launchStatus, isLaunchText, newestByFamily } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
@@ -41,6 +41,27 @@ const CACHE = /\bprompt cach|\bcache (?:reads?|writes?|hits?)\b/i;
 export const priceChange = (row) => (row.type !== "model" || row.source === "skills" || row.source === "cookbooks"
   || isLaunch(row) || row.risk === "deprecation" || row.risk === "breaking" ? null
   : PRICE.test(row.text || "") ? "price" : LIMIT.test(row.text || "") ? "limit" : null);
+// B-45: by row id, the model ids that first-party launches announced within a day of the row, either
+// side (the newest named model per family, B-44): the launch's own notes, across sources, not changes
+// made a week later. Launches are announced in the release notes, Anthropic's news and Claude Code's
+// changelog; a skill commit making a model its default is not one. loadRows stores them as
+// row.withLaunch.
+const WINDOW = 86400000;
+export const ANNOUNCES = new Set(["platform-release-notes", "anthropic-news", "claude-code"]);
+export function launchedWith(rows) {
+  const launches = rows.filter((r) => !r.fyiOnly && ANNOUNCES.has(r.source) && isLaunch(r))
+    .map((r) => ({ at: Date.parse(r.date), ids: [...newestByFamily(modelRefs(`${r.title || ""} ${r.text || ""}`)).values()].map((m) => m.id) }));
+  const out = new Map();
+  for (const r of rows) {
+    const at = Date.parse(r.date);
+    const ids = [...new Set(launches.filter((l) => Math.abs(l.at - at) <= WINDOW).flatMap((l) => l.ids))];
+    if (ids.length) out.set(r.id, ids);
+  }
+  return out;
+}
+
+const isBreaking = (row) => row.risk === "breaking" || row.risk === "deprecation" || row.type === "breaking-or-deprecation";
+
 // The extra name verify.mjs looks up for a price change: a caching price matters only to code that
 // marks cache breakpoints.
 export const priceTerms = (row) => (priceChange(row) === "price" && CACHE.test(row.text || "") ? ["cache_control"] : []);
@@ -103,12 +124,22 @@ export function bounds(row, project, evs, models) {
   else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
   else if (inv?.partial) { evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit"; }
 
+  // What the item is on (B-34), for anything but a launch, and the project's pinned models inside it,
+  // with the file and line each is used at.
+  const scope = inv && !isLaunch(row) ? modelScope(row.text, { title: row.title }) : null;
+  const closed = scope?.open === "none" ? scope.clauses.filter((c) => !c.loose) : [];
+  const inUse = scope ? (inv.used || uses.map((id) => ({ id }))).filter((u) => inScope(scope, u.id) === "in") : [];
+  const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
+  const named = (u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`;
+  const lower = (band) => { if (BANDS[band][1] < hi) [lo, hi] = BANDS[band]; }; // never raises the lenses' band
+
   // Aliases are never resolved (B-39, P-14): an alias in a family the item names, with no pinned id
-  // of that family, may run any of its models, so the project is asked to confirm, at soon.
-  const families = new Set(refs.map((r) => r.family));
+  // of that family, may run any of its models, so the project is asked to confirm, at soon. A closed
+  // scope names the families; otherwise every model the text names counts.
+  const families = new Set(closed.length ? closed.map((c) => c.family) : refs.map((r) => r.family));
   const pinned = new Set(uses.map(parseModel).filter(Boolean).map((m) => m.family));
   const aliases = (inv?.aliases || []).filter((a) => a.family);
-  const inFamily = aliases.filter((a) => families.has(a.family) && !pinned.has(a.family));
+  const inFamily = aliases.filter((a) => (families.has(a.family) || families.has(null)) && !pinned.has(a.family));
   const exposed = inFamily.find((a) => !/\.md$/i.test(a.file)) || inFamily[0]; // cite code before front matter
   const asAlias = (a = exposed) => {
     [lo, hi] = BANDS.soon; evidence = "alias";
@@ -139,20 +170,15 @@ export function bounds(row, project, evs, models) {
     // its file and line; a caching price also needs `cache_control` in a fully searched project.
     // Otherwise later, one line. Never a model-refresh.
     priceOnly = true;
-    const lower = (band) => { if (BANDS[band][1] < hi) [lo, hi] = BANDS[band]; }; // never raises the lenses' band
-    const scope = modelScope(row.text, { title: row.title });
-    const inUse = (inv.used || uses.map((id) => ({ id }))).filter((u) => inScope(scope, u.id) === "in");
-    const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
-    const named = inUse.map((u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`);
     const what = kind === "price" ? "check your price table" : "check your limits";
     const noCache = e?.checked?.includes("cache_control") && !foundIn.some((f) => f.term === "cache_control");
     if (inUse.length && noCache) {
       lower("later"); evidence = "not-found";
-      note = `uses ${list(named)} but sends no \`cache_control\`: the cache price does not apply yet`;
+      note = `uses ${list(inUse.map(named))} but sends no \`cache_control\`: the cache price does not apply yet`;
     } else if (inUse.length) {
       lower("soon"); evidence = "confirmed";
       foundIn = [...inUse.map((u) => ({ term: u.id, file: at(u) })), ...foundIn];
-      note = `${what}: this project uses ${list(named)}`;
+      note = `${what}: this project uses ${list(inUse.map(named))}`;
     } else if (inv.partial) {
       lower("soon"); evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit";
     } else {
@@ -162,6 +188,27 @@ export function bounds(row, project, evs, models) {
       const a = reach.find((x) => !/\.md$/i.test(x.file)) || reach[0]; // cite code before front matter
       note = a ? `your \`${a.alias}\` alias may run it (${a.file}:${a.line}): ${what}`
         : uses.length ? `this project uses ${list(known)}` : "no model id or alias found in this project's code or config";
+    }
+  } else if (isBreaking(row) && inUse.length) {
+    // B-45: a breaking change or retirement on a model the project pins: confirmed, citing where the
+    // model is used, in the item's own band (a not-found cap left by another name no longer applies).
+    // Announced with a launch of a model the project already runs (launchedWith), the project has met
+    // it already: soon, confirm it is handled (RF 6). On the way to a launched model it does not run
+    // yet, it is no more urgent than the upgrade itself: soon (B-36). A retirement is never lowered (B-4).
+    [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none;
+    // Only launched models the item names count: a range ("Sonnet 5+") is not about the launch.
+    const launched = new Set((row.withLaunch || []).filter((id) => refs.some((r) => r.id === id)));
+    const met = inUse.filter((u) => launched.has(u.id));
+    const next = [...launched].filter((id) => inScope(scope, id) === "in" && !inUse.some((u) => u.id === id));
+    const cited = inUse.filter((u) => u.file).map((u) => ({ term: u.id, file: at(u) }));
+    evidence = "confirmed";
+    foundIn = [...cited, ...foundIn.filter((f) => !cited.some((c) => c.term === f.term))];
+    if (met.length && row.risk !== "deprecation") {
+      lower("soon");
+      note = `already runs ${list(met.map(named))}, launched with this change: confirm it is handled`;
+    } else {
+      if (next.length && row.risk !== "deprecation") lower("soon");
+      note = `uses ${list(inUse.map(named))}${next.length ? `; applies when you move to ${list(next)}` : ""}`;
     }
   } else if ((row.risk === "deprecation" || row.risk === "breaking") && exposed && evidence !== "confirmed") {
     // A retirement or breaking change in an alias's family: the alias may run the affected model.
