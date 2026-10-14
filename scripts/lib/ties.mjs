@@ -4,7 +4,7 @@
 // fetched text says can tie a project that the predicate does not. Tested in tests/ties.test.mjs.
 import { modelRefs, launchStatus, isLaunchText } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
-import { isLaunch } from "./rate.mjs";
+import { isLaunch, isTripwire } from "./rate.mjs";
 
 // Sources whose model changes reach a project's own API calls. Claude Code's reach only the projects
 // that run Claude Code: setup, and projects whose code scripts `claude`. Skill and cookbook commits
@@ -81,10 +81,7 @@ const SESSION = "(?:sessions?|runs?|turns?|calls?|requests?)";
 const FEATURE_WORD = "(?:sub-?agents?|teammates?|background|hooks?|skills?|plugins?|MCP)";
 const GENERAL = new RegExp(`\\b${SESSION}\\s*,?\\s+(?:and|or)\\s+(?:\\S+\\s+){0,2}${FEATURE_WORD}\\b|\\b${FEATURE_WORD}(?:\\s+servers?)?\\s*,?\\s+(?:and|or)\\s+(?:\\S+\\s+){0,2}${SESSION}\\b`, "i");
 
-// The panel's tripwire set (P-4, P-5): never dropped, never below soon.
-const SERIOUS = /security|break|deprecat|retir/;
-export const isTripwire = (row) => !row.fyiOnly && (["security", "breaking", "deprecation"].includes(row.risk)
-  || ["security", "breaking-or-deprecation"].includes(row.type) || (row.tripwires || []).some((t) => SERIOUS.test(t)));
+export { isTripwire }; // the panel's tripwire set (P-4, P-5), defined with the bands in rate.mjs
 
 const cite = (where) => where.slice(0, 3).join(", ") + (where.length > 3 ? ` +${where.length - 3}` : "");
 

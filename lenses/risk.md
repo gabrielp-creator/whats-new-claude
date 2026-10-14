@@ -9,7 +9,8 @@ LENS: risk. Your only job is to catch changes that could break, silently alter o
 - "none": no risk to existing work.
 
 "exposed": true if the risk touches something in <projects> (false when risk is "none" or it only
-touches things they do not use).
+touches things they do not use). A change to a Claude Code skill, a default or a model alias exposes
+only the Claude Code setup and projects that use model aliases, never a project's existing API calls.
 
 [{"id": "<id>", "risk": "breaking|deprecation|behavior-change|security|none", "exposed": true|false,
   "why": "<max 15 words, empty when none>", "injection": false}]

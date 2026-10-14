@@ -28,6 +28,17 @@ export const termKind = (t, { callsClaude = false } = {}) => (t.startsWith("/") 
 // A model launch, rather than a retirement or a breaking change: finding the new id means the project
 // has already moved, so the file check reads the other way round (B-29).
 export const isLaunch = (row) => row.type === "model" && row.risk !== "deprecation" && row.risk !== "breaking";
+
+// The panel's tripwire set (P-4, P-5): never dropped, never below soon.
+const SERIOUS = /security|break|deprecat|retir/;
+export const isTripwire = (row) => !row.fyiOnly && (["security", "breaking", "deprecation"].includes(row.risk)
+  || ["security", "breaking-or-deprecation"].includes(row.type) || (row.tripwires || []).some((t) => SERIOUS.test(t)));
+
+// B-40: a change to a Claude Code skill, a default or a model alias shapes code Claude writes from now
+// on; it changes no call a project already makes. Skill commits, and Claude Code items naming the
+// claude-api skill, a default model or an alias.
+const DEFAULT_CHANGE = /\bclaude-api\b|\bdefault (?:\w+ )?model\b|\bnow the default\b|\bmodel alias(?:es)?\b/i;
+export const isSkillOrDefault = (row) => row.source === "skills" || (row.source === "claude-code" && DEFAULT_CHANGE.test(`${row.title || ""} ${row.text || ""}`));
 const list = (ids) => ids.slice(0, 3).join(", ") + (ids.length > 3 ? ` +${ids.length - 3}` : "");
 
 // evs: verify.mjs evidence rows for this item ({project, checked, found, mentioned}). checked is []
@@ -88,10 +99,18 @@ export function bounds(row, project, evs, models) {
     evidence = "other-models"; hi = Math.min(hi, NOT_FOUND_CAP);
     note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
   }
+  // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
+  // project gets "read" at most, in the later band. Tripwire items keep their band (P-4).
+  let readOnly = false;
+  if (project && project !== "setup" && !aliases.length && isSkillOrDefault(row) && !isTripwire(row)) {
+    readOnly = true; hi = Math.min(hi, BANDS.later[1]);
+    const line = "a skill or default change: it shapes code Claude writes from now on, not your existing calls";
+    note = note ? `${note}; ${line}` : line;
+  }
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
   // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
   if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -117,6 +136,7 @@ export function rateRow(row, evs, orch, models) {
     const score = a ? clampScore(a.score, b) : null;
     let act = a && ACTIONS.has(a.do) ? a.do : "read";
     if (row.fyiOnly && act === "try-feature") act = "read";
+    if (b.readOnly && act !== "ignore") act = "read";
     return {
       project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note,
       score: score ?? codeScore(row, b),

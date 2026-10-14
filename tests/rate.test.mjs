@@ -396,3 +396,28 @@ test("staleRating for answers stored before 0.3.0 (no seen): stale only where th
   const retire = { ...row({ type: "breaking-or-deprecation", risk: "deprecation", text: "`claude-sonnet-4-5` retires" }), projects: ["app"] };
   assert.equal(staleRating(retire, legacy, [ev({ checked: ["claude-sonnet-4-5"], found: [] })], inv(["claude-opus-4-8"])), false, "retirements are unchanged");
 });
+
+// B-40 (AK 4): a skill's new default, or a default-model change, shapes code Claude writes from now
+// on and changes no existing call. A project other than setup with no model alias gets "read" at
+// most, in the later band, with code's line; setup, alias users and tripwire items keep their band.
+const skillDefault = row({ source: "skills", type: "model", risk: "behavior-change", text: "Update claude-api skill: Claude Opus 5.5 default. Make Claude Opus 5.5 (`claude-opus-5-5`) the default model" });
+const appOnly = { app: { models: ["claude-sonnet-4-6"], aliases: [], partial: false }, setup: { models: [], aliases: [], partial: false } };
+
+test("B-40: a skill or default change is 'read' at most, later band, for an app project with no alias (AK 4)", () => {
+  const b = bounds(skillDefault, "app", [], appOnly);
+  assert.ok(b.hi <= BANDS.later[1], `hi ${b.hi}`);
+  assert.match(b.note, /code Claude writes from now on/);
+  const r = rateRow({ ...skillDefault, projects: ["app"] }, [], { id: "x:1", ratings: [{ project: "app", score: 9, do: "model-refresh", why: "w" }] }, appOnly);
+  assert.equal(r.ratings[0].do, "read");
+  assert.ok(r.ratings[0].score <= BANDS.later[1]);
+  for (const text of ["Changed the default model on Pro and Team Standard plans from Sonnet to Opus", "Fixed the `claude-api` skill suggesting an old SDK call"]) {
+    assert.ok(bounds(row({ source: "claude-code", type: "behavior-change", risk: "behavior-change", text }), "app", [], appOnly).hi <= BANDS.later[1], text);
+  }
+});
+
+test("B-40: setup, alias users, tripwire items and other Claude Code items keep their band", () => {
+  assert.ok(bounds(skillDefault, "setup", [], appOnly).hi > BANDS.later[1], "setup");
+  assert.ok(bounds(skillDefault, "app", [], withAliases([], [sonnetAlias])).hi > BANDS.later[1], "an alias user");
+  assert.ok(bounds({ ...skillDefault, type: "security", risk: "security" }, "app", [], appOnly).hi > BANDS.later[1], "a security item (P-4)");
+  assert.ok(bounds(row({ source: "claude-code", type: "bug-fix", risk: "none", text: "Fixed a crash on startup" }), "app", [], appOnly).hi > BANDS.later[1]);
+});
