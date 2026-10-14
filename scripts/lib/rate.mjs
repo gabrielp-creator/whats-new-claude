@@ -278,13 +278,13 @@ export function bounds(row, project, evs, models) {
     if ((row.urgencyBy === "floor" || row.urgencyBy === "exposed") && !(evidence === "confirmed" && lensesAgree(row))) lower("soon");
   }
   // B-52 (Gabriel, 2026-10-13): a Claude Code item at or below the version this project runs, with no
-  // confirmation in its config, is already in that version: one line, later, "read". New capabilities
+  // confirmation in its config, is already in that version: one line, later, "read". New capabilities (model launches among them)
   // and breaking items stay rated (P-6); a security item stays in soon with the note (P-4); no version
   // that parses, no group (P-17).
   let installed;
   const tag = /^v?(\d+\.\d+\.\d+)$/.exec(String(row.title || ""))?.[1];
   if (row.source === "claude-code" && inv?.claudeCode && tag && !olderThan(inv.claudeCode, tag) && evidence !== "confirmed"
-    && !fresh && row.type !== "new-capability" && !isBreaking(row) && !row.codeMade) {
+    && !fresh && row.type !== "new-capability" && !isLaunch(row) && !isBreaking(row) && !row.codeMade) {
     installed = inv.claudeCode;
     if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); } else lower("later");
     note = note ? `${note}; already in your version (${installed})` : `already in your version (${installed})`;

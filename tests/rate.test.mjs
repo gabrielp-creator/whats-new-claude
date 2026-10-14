@@ -821,3 +821,10 @@ test("P-12: 'ignore' in the later band agrees with it; only a band that asks for
   assert.equal(at(3, "ignore").disagrees, false);
   assert.equal(at(0.5, "read").disagrees, true, "still flagged when well below the band");
 });
+
+test("B-52: a model launch in Claude Code's changelog is a new capability, never 'already in your version' (P-6)", () => {
+  const cc = ccFix({ type: "model", risk: "none", title: "v2.1.280", text: "Added Claude Opus 5.5 (`claude-opus-5-5`), now the default Opus model" });
+  const b = bounds(cc, "app", [], { app: { models: ["claude-opus-4-8"], aliases: [], partial: false, claudeCode: "2.1.296" } });
+  assert.equal(b.installed, undefined);
+  assert.equal(b.evidence, "upgrade");
+});
