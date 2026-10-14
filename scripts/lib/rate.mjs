@@ -6,6 +6,7 @@ import { injectionFlag } from "./batch.mjs";
 import { parseModel, modelRefs, launchStatus, isLaunchText, newestByFamily } from "./models.mjs";
 import { modelScope, inScope } from "./scope.mjs";
 import { STATE_NAME } from "./brief.mjs";
+import { SERIOUS } from "./merge.mjs";
 
 export const BANDS = { urgent: [7, 10], soon: [5, 8.4], later: [2, 5.9], none: [0, 1.9] };
 export const FYI_CAP = 6.9;       // third-party plugins and external forks are FYI only
@@ -101,9 +102,8 @@ const olderThan = (a, b) => { const x = a.split(".").map(Number), y = b.split(".
 export const priceTerms = (row) => (priceChange(row) === "price" && CACHE.test(row.text || "") ? ["cache_control"] : []);
 
 // The panel's tripwire set (P-4, P-5): never dropped, never below soon.
-const SERIOUS = /security|break|deprecat|retir/;
 export const isTripwire = (row) => !row.fyiOnly && (["security", "breaking", "deprecation"].includes(row.risk)
-  || ["security", "breaking-or-deprecation"].includes(row.type) || (row.tripwires || []).some((t) => SERIOUS.test(t)));
+  || ["security", "breaking-or-deprecation"].includes(row.type) || (row.tripwires || []).some((t) => SERIOUS.has(t)));
 
 // B-40: a change to a Claude Code skill, a default or a model alias shapes code Claude writes from now
 // on; it changes no call a project already makes. Skill commits, and Claude Code items naming the

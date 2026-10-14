@@ -6,7 +6,9 @@ const RISKY_TYPES = new Set(["model", "security", "breaking-or-deprecation"]);
 const FYI_ONLY = new Set(["third-party", "external-fork"]);
 // FYI-only: from a third-party plugin or a fork. Takes an item (provenance) or a merged row (fyiOnly).
 export const isFyi = (x) => (typeof x?.fyiOnly === "boolean" ? x.fyiOnly : FYI_ONLY.has(x?.provenance));
-const SERIOUS = new Set(["security", "breaking", "deprecation", "retired"]);
+// The serious tripwire labels (tripwireLabel below), matched exactly: a setup name holding one of
+// the words is not one (R-7).
+export const SERIOUS = new Set(["security", "breaking", "deprecation", "retired"]);
 const STRENGTH = { high: 3, medium: 2, low: 1 };
 const WORDS = { remov: "removed", renam: "renamed", retir: "retired", deprecat: "deprecation", migrat: "migration" };
 

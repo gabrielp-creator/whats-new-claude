@@ -76,3 +76,13 @@ test("verify ties an untied security item to the project whose code uses its opt
   assert.deepEqual(ev.map((e) => [e.project, e.tiedBy, e.ties]), [["app", "tripwire", ["streamTimeoutMs"]]]);
   assert.match(r.stdout, /1 by tripwire term/);
 });
+
+// R-7 (release review): a setup name that contains a serious word is not a serious tripwire.
+test("only the serious tripwire labels merge.mjs makes count, not setup names that contain the words", async () => {
+  const { tripwireLabel } = await import("../scripts/lib/merge.mjs");
+  const { isTripwire } = await import("../scripts/lib/rate.mjs");
+  const plain = { source: "claude-code", fyiOnly: false, type: "bug-fix", risk: "none" };
+  for (const p of ["setup:security-review", "setup:break-glass", "setup:deprecated-notes", "setup:retire-old"]) assert.equal(isTripwire({ ...plain, tripwires: [tripwireLabel(p)] }), false, p);
+  // the patterns fetch.mjs stores (TRIPWIRES[].source)
+  for (const p of ["\\bsecurity\\b", "\\bbreaking\\b", "\\bdeprecat", "\\bretir(e|ed|es|ing)\\b"]) assert.equal(isTripwire({ ...plain, tripwires: [tripwireLabel(p)] }), true, p);
+});
