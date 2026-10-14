@@ -47,6 +47,20 @@
 - Setup's project descriptions read `package.json` and `pyproject.toml` up to two folders below each
   project (skipping installed packages and dot folders), so a workspace that keeps its code in a
   subfolder is described with its packages. Only the draft written by `/whats-new setup` changes.
+- **Privacy change:** the plugin now reads `settings.local.json` (in `~/.claude` and in each
+  project's `.claude` folder), which it never opened before, and the `hooks/hooks.json` of enabled
+  plugins. They are parsed in memory to a fixed set of facts, stored per project in `profile.json`:
+  each hook's event, type and script path (never its command or prompt), the tool names in allow,
+  deny and ask rules (never the rule text; MCP tools only as "mcp"), `defaultMode`, whether the
+  sandbox is on, whether a skill or command runs inline shell, and Anthropic package names in
+  manifests. PRIVACY.md and the README say so. The general file check still never opens
+  `settings.local.json`, `.mcp.json` or `.env` files.
+- Settings items can now be checked. A release item about hook types or events, permission rules,
+  the sandbox, inline shell or a permission mode names no word a file search can find, so it stayed
+  unchecked in its full band. Such items are now answered from the profile: a matching hook or rule
+  confirms the item ("`command` hook on Stop", "Bash in deny rules"), and when every setting the item
+  names is visible but absent, the item counts as "not found". A mode that can be switched during a
+  session, or a project with no settings file, stays unknown.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
