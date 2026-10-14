@@ -105,10 +105,11 @@ for (const r of rows) {
   // A caching price change also looks for cache breakpoints in the code (B-57).
   const terms = [...extractTerms(`${r.title || ""} ${r.text || ""}`), ...priceTerms(r)];
   const conds = profileTerms(`${r.title || ""} ${r.text || ""}`);
-  // The file check for one project, or null when there is nothing to check it with.
+  // The file check for one project, or null when there is nothing to check it with. Third-party and
+  // fork items are never looked up (P-29): their terms would learn which names exist in which file.
   const check = (proj) => {
     const ix = indexes.get(proj);
-    if (!ix || (!terms.length && !conds.length)) return null;
+    if (r.fyiOnly || !ix || (!terms.length && !conds.length)) return null;
     const { found: inFiles, mentioned: only } = lookup(terms, ix);
     // The profile reads settings files directly, so the file cap never hides its answer.
     const fromProfile = profileLookup(conds, profiles[proj]);
