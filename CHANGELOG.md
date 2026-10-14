@@ -36,6 +36,14 @@
   read as a release archive: its names are mentions, never confirmations. One copied snippet still
   counts, identifiers count as one word, and phrases shared by more than two items are ignored. Each
   such file is printed by the file check and listed under `archives` in `models.json`.
+- Fix: CLI flags were never found. A release item names a flag with its dashes (`--strict-mcp-config`)
+  and the file index dropped them, so a project passing the flag read "not found". Flags are now
+  looked up with their dashes, and only within 10 lines of a call to the `claude` CLI in config or
+  code (a shell `claude -...`, a `cmd: "claude"` setting, or `"claude"` on a line that starts a
+  process), so another tool's `--continue` does not count; `-p`, `-c` and `-r` count as `--print`,
+  `--continue` and `--resume`. In a project whose code calls `claude`, an absent flag counts as "not
+  found" like any other name. `models.json` lists each project's `claudeCalls` with file and line.
+  "Found in" now names a code file before a config file.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each

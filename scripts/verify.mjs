@@ -51,7 +51,7 @@ for (const p of config.projects) {
   const ix = files && useIndex(files, { claudeRoot, archives: new Set(archives.map((a) => a.file)) });
   if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
-  if (ix) models[p.id] = { ...ix.models, archives, partial: Boolean(files.capped) };
+  if (ix) models[p.id] = { ...ix.models, claudeCalls: ix.claudeCalls, archives, partial: Boolean(files.capped) };
   console.log(`${p.id}: ${files ? `${files.length} files indexed${partial.has(p.id) ? " (cap reached: only confirmations count)" : ""}` : "no folder configured, not checked"}`);
   for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
 }

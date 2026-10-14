@@ -29,13 +29,15 @@ export function extractTerms(text) {
   return out;
 }
 
-// Map each identifier-like token in the files to the first file it appears in. Case-sensitive.
+// Map each identifier-like token in the files to the first file it appears in. Case-sensitive. A long
+// flag is also kept with its dashes, the form extractTerms gives (B-61).
 export function tokenIndex(files) {
   const idx = new Map();
+  const add = (t, file) => { if (t && !idx.has(t)) idx.set(t, file); };
   for (const { file, text } of files) {
     for (const raw of String(text).match(/[@\w./:-]+/g) || []) {
-      const t = raw.replace(/^[.:,;-]+|[.:,;-]+$/g, "");
-      if (t && !idx.has(t)) idx.set(t, file);
+      add(raw.replace(/^[.:,;-]+|[.:,;-]+$/g, ""), file);
+      if (/^--[A-Za-z]/.test(raw)) add(raw.replace(/[.:,;-]+$/, ""), file);
     }
   }
   return idx;

@@ -21,6 +21,24 @@ test("names people type are 'typed'; names that live in files are 'file'", () =>
   for (const t of ["claude-opus-5-5", "@anthropic-ai/sdk", "ANTHROPIC_MODEL", "bashOutputMaxChars", "PreToolUse"]) assert.equal(termKind(t), "file", t);
 });
 
+test("B-61: in a project whose code calls claude, flags are file terms; slash commands stay typed", () => {
+  assert.equal(termKind("--bare", { callsClaude: true }), "file");
+  assert.equal(termKind("/compact", { callsClaude: true }), "typed");
+  assert.equal(termKind("--bare", { callsClaude: false }), "typed");
+});
+
+test("B-61: a flag absent from code that calls claude is not-found, kept out of 8+ (LCW 4)", () => {
+  const item = row({ urgencyLabel: "urgent", text: "Added `--bare` to skip hooks, skills and plugins" });
+  const evs = [ev({ checked: ["--bare"], found: [] })];
+  const calls = { app: { models: [], aliases: [], claudeCalls: [{ file: "scripts/run.mjs", line: 75 }], partial: false } };
+  const b = bounds(item, "app", evs, calls);
+  assert.equal(b.evidence, "not-found");
+  assert.equal(b.hi, 7.9);
+  const noCalls = bounds(item, "app", evs, { app: { models: [], aliases: [], claudeCalls: [], partial: false } });
+  assert.equal(noCalls.evidence, "unchecked", "no claude call: a flag is typed, its absence says nothing");
+  assert.equal(noCalls.hi, 10);
+});
+
 test("third-party and fork items are capped at 6.9 whatever the tier", () => {
   const b = bounds(row({ fyiOnly: true }), "app", []);
   assert.equal(b.hi, 6.9);

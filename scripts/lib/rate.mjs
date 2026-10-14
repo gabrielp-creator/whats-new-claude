@@ -21,8 +21,9 @@ const round1 = (n) => Math.round(n * 10) / 10;
 
 // Flags and slash commands are typed, so they never appear in a project's files; their absence there
 // says nothing. Every other extracted name (model ids, packages, env vars, settings keys, hook names)
-// would be written somewhere if the project used it.
-export const termKind = (t) => (/^[-/]/.test(t) ? "typed" : "file");
+// would be written somewhere if the project used it. A project whose code calls the claude CLI writes
+// its flags down, so there a flag is a file term (B-61).
+export const termKind = (t, { callsClaude = false } = {}) => (t.startsWith("/") || (t.startsWith("-") && !callsClaude) ? "typed" : "file");
 
 // A model launch, rather than a retirement or a breaking change: finding the new id means the project
 // has already moved, so the file check reads the other way round (B-29).
@@ -45,7 +46,7 @@ export function bounds(row, project, evs, models) {
   let evidence = "unchecked", foundIn = [], note = "";
   if (e?.found?.length) { evidence = "confirmed"; foundIn = e.found; }
   else if (mentionedIn.length) { evidence = "mentioned"; note = `named only in docs, data or comments: ${mentionedIn.slice(0, 2).map((f) => `${f.term} in ${f.file}`).join("; ")}`; }
-  else if (e?.checked?.some((t) => termKind(t) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
+  else if (e?.checked?.some((t) => termKind(t, { callsClaude: Boolean(inv?.claudeCalls?.length) }) === "file")) { evidence = "not-found"; hi = Math.min(hi, NOT_FOUND_CAP); }
   else if (inv?.partial) { evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit"; }
 
   // Aliases are never resolved (B-39, P-14): an alias in a family the item names, with no pinned id

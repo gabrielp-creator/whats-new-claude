@@ -25,6 +25,13 @@ test("token index finds identifiers with surrounding punctuation, by exact case"
   assert.equal(idx.get("taskOutputMaxChars"), undefined);
 });
 
+test("token index keeps a long flag's dashes, as extractTerms does (B-61, LCW 3)", () => {
+  const idx = tokenIndex([{ file: "run.sh", text: 'claude -p --strict-mcp-config "x"\n- a bullet, -- a dash' }]);
+  assert.equal(idx.get("--strict-mcp-config"), "run.sh");
+  assert.ok(extractTerms("Added `--strict-mcp-config`.").includes("--strict-mcp-config"), "the term the check looks up");
+  assert.equal(idx.get("-"), undefined);
+});
+
 const row = (o = {}) => ({ urgency: 60, urgencyLabel: "soon", projects: ["app"], ...o });
 
 test("confirmed evidence keeps the tier and marks where it was found", () => {

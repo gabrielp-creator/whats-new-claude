@@ -124,3 +124,91 @@ test("lookup: a term in used text is found; a term only in mentions is 'mentione
     mentioned: [{ term: "claude-api", file: "docs/design.md" }, { term: "claude-agent-sdk", file: "data/archive/list.html" }, { term: "ClaudeSDKClient", file: "docs/design.md" }],
   });
 });
+
+// B-61: CLI flags are looked up with their dashes, and count only within 10 lines of a call to the
+// claude CLI in config or code (P-26: another tool's --continue is not a claude flag).
+const caller = {
+  file: "scripts/run-lens.mjs",
+  text: [
+    'import { spawn } from "node:child_process";',
+    "function run(input) {",
+    '  const args = ["-p", "--model", MODEL, "--tools", \'""\', "--strict-mcp-config", "--safe-mode"];',
+    "  // --bare would skip hooks",
+    '  const p = spawn("claude", args, { shell: true });',
+    "}",
+  ].join("\n"),
+};
+
+test("a flag passed to claude in code is found, with its dashes (LCW 3)", () => {
+  const ix = useIndex([caller]);
+  assert.deepEqual(lookup(["--strict-mcp-config", "--safe-mode"], ix).found,
+    [{ term: "--strict-mcp-config", file: "scripts/run-lens.mjs" }, { term: "--safe-mode", file: "scripts/run-lens.mjs" }]);
+  assert.deepEqual(lookup(["--bare"], ix), { found: [], mentioned: [{ term: "--bare", file: "scripts/run-lens.mjs" }] }, "a flag in a comment is a mention");
+  assert.deepEqual(ix.claudeCalls, [{ file: "scripts/run-lens.mjs", line: 5 }]);
+});
+
+test("a shell call on one line, and a call in package.json scripts, count", () => {
+  const ix = useIndex([
+    { file: "run.sh", text: 'claude -p --strict-mcp-config "$PROMPT"' },
+    { file: "package.json", text: '{ "scripts": { "lens": "claude -p --no-session-persistence" } }' },
+  ]);
+  assert.equal(lookup(["--strict-mcp-config"], ix).found.length, 1);
+  assert.equal(lookup(["--no-session-persistence"], ix).found.length, 1);
+});
+
+test("another tool's flag is not a claude flag (P-26)", () => {
+  const far = { file: "scripts/far.mjs", text: ['spawn("claude", ["-p"]);', ...Array(11).fill("x();"), 'execFileSync("git", ["rebase", "--continue"]);'].join("\n") };
+  const none = { file: "scripts/git.sh", text: "git rebase --continue" };
+  assert.deepEqual(lookup(["--continue"], useIndex([far])), { found: [], mentioned: [] });
+  assert.deepEqual(lookup(["--continue"], useIndex([none])), { found: [], mentioned: [] });
+  assert.deepEqual(useIndex([none]).claudeCalls, []);
+});
+
+test("'claude' that is not a call does not count: paths, names, prose, comments", () => {
+  const ix = useIndex([{ file: "src/a.ts", text: [
+    'const dir = join(home, ".claude");',
+    'const repo = "claude-watch";',
+    'log("Claude said --verbose things");',
+    '// spawn("claude", ["--verbose"])',
+  ].join("\n") }]);
+  assert.deepEqual(ix.claudeCalls, []);
+  assert.deepEqual(lookup(["--verbose"], ix).found, []);
+});
+
+test("a doc mentioning a flag is a mention, with its dashes", () => {
+  assert.deepEqual(lookup(["--strict-mcp-config"], useIndex([{ file: "docs/how.md", text: "Pass `--strict-mcp-config` to claude." }])),
+    { found: [], mentioned: [{ term: "--strict-mcp-config", file: "docs/how.md" }] });
+});
+
+test("'found in' prefers a code file over a config file (B-61)", () => {
+  const ix = useIndex([
+    { file: "package.json", text: '{ "dependencies": { "@anthropic-ai/sdk": "^1.0.0" } }' },
+    { file: "src/llm.ts", text: 'import Anthropic from "@anthropic-ai/sdk";' },
+  ]);
+  assert.deepEqual(lookup(["@anthropic-ai/sdk"], ix).found, [{ term: "@anthropic-ai/sdk", file: "src/llm.ts" }]);
+});
+
+test("'claude' as a value is not a call: ids, providers, defaults; a spawn, a command setting or Python's run are", () => {
+  const values = useIndex([{ file: "src/runtime.ts", text: [
+    'readonly id = "claude" as const;',
+    "const cfg = { provider: 'claude', model: MODEL, temperature: 0.2 };",
+    'const choice = (process.env.RUNTIME ?? "claude").toLowerCase();',
+    "if (config?.provider === 'claude' && config.model) {",
+    'const flags = ["--verbose"];',
+  ].join("\n") }]);
+  assert.deepEqual(values.claudeCalls, []);
+  assert.deepEqual(lookup(["--verbose"], values).found, []);
+  const calls = useIndex([
+    { file: "lib/cli.mjs", text: 'if (!hit) return { cmd: "claude", shell: false };' },
+    { file: "run.py", text: 'subprocess.run(["claude", "-p", "--bare", prompt])' },
+    { file: "go.mjs", text: 'execFileSync("claude.exe", ["--version"])' },
+  ]);
+  assert.deepEqual(calls.claudeCalls.map((c) => c.file), ["lib/cli.mjs", "run.py", "go.mjs"]);
+  assert.equal(lookup(["--bare"], calls).found.length, 1);
+});
+
+test("a short flag passed to claude counts as its long form (-p is --print)", () => {
+  const ix = useIndex([caller]);
+  assert.deepEqual(lookup(["--print"], ix).found, [{ term: "--print", file: "scripts/run-lens.mjs" }]);
+  assert.deepEqual(lookup(["--print"], useIndex([{ file: "scripts/git.sh", text: "grep -p x" }])).found, [], "not near a claude call");
+});
