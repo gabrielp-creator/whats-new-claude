@@ -134,7 +134,7 @@ for (const r of rows) {
 
   const tag = (proj) => (ties.has(proj) ? { tiedBy: ties.get(proj).tiedBy, ties: ties.get(proj).ids } : { tiedBy: "lens" });
   const kept = [];
-  for (const proj of [...lensChecked, ...ties.keys(), ...cliDrop.keys()].filter((p, i, a) => a.indexOf(p) === i)) {
+  for (const proj of [...lensChecked, ...ties.keys(), ...cliDrop.keys(), ...held.keys()].filter((p, i, a) => a.indexOf(p) === i)) {
     const res = results.get(proj) ?? check(proj);
     const d = cliDrop.get(proj), h = held.get(proj);
     if (!res && !ties.has(proj) && !d && !h) continue;

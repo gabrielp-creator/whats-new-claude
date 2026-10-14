@@ -118,3 +118,27 @@ test("verify drops, holds and re-ties to setup; loadRows shows the result (LCW 5
   assert.ok(ev.some((e) => e.id.endsWith(":2") && e.project === "bot" && /tools off/.test(e.held)));
   assert.match(r.stdout, /2 dropped \(2 cli-off\)/);
 });
+
+// R-4 (release review): a held tie gets its evidence row even when the impact lens says "no effect",
+// so the note and the count the terminal prints agree with what bounds() reads.
+test("a held tripwire tie is written even when the impact lens says no effect", () => {
+  const ws = mkdtempSync(join(tmpdir(), "wnc-ws-")), home = mkdtempSync(join(tmpdir(), "wnc-home-")), data = mkdtempSync(join(tmpdir(), "wnc-data-"));
+  mkdirSync(join(ws, "bot", "scripts"), { recursive: true });
+  writeFileSync(join(ws, "bot", "scripts", "run.sh"), '#!/bin/sh\necho "$PROMPT" | claude -p --tools "" --strict-mcp-config --safe-mode --model sonnet\n');
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(home, ".claude", "settings.json"), "{}");
+  writeFileSync(join(data, "config.json"), JSON.stringify({ workspaceRoot: ws, projects: [
+    { id: "setup", description: "Claude Code setup", briefDir: "briefs/setup" },
+    { id: "bot", description: "A script that calls claude", path: "bot", briefDir: "bot/docs" },
+  ] }));
+  const items = [{ id: "claude-code:v2.1.300:0", source: "claude-code", date: "2026-10-10", title: "v2.1.300", text: "Fixed WebSearch sending the query to a blocked host", url: "https://github.com/anthropics/claude-code/releases/tag/v2.1.300", provenance: "anthropic-release", tripwires: [] }];
+  writeFileSync(join(data, "items.jsonl"), jsonl(items));
+  writeFileSync(join(data, "lens-impact.jsonl"), jsonl([{ id: items[0].id, effect: "none", projects: ["bot"], new_work: false, strength: "low", why: "w", injection: false }]));
+  writeFileSync(join(data, "lens-type.jsonl"), jsonl([{ id: items[0].id, type: "security", action: "read", injection: false }]));
+  writeFileSync(join(data, "lens-risk.jsonl"), jsonl([{ id: items[0].id, risk: "none", exposed: false, why: "", injection: false }]));
+  const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "scripts", "verify.mjs"), "--data", data], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /1 security, breaking or deprecation item\(s\) kept with a note/);
+  const held = readJsonl(join(data, "evidence.jsonl")).filter((e) => e.held);
+  assert.deepEqual(held.map((e) => e.project), ["bot"]);
+});
