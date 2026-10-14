@@ -64,13 +64,44 @@ function fromElements(els) {
 
 function fromShell(rest) {
   const values = [];
+  let hard = false;
   for (const m of rest.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g)) {
     if (m[3] === "\\") continue; // a line continuation
     if (m[2] !== undefined) values.push(m[2]);
     else if (m[1] !== undefined) values.push(m[1].includes("$") ? null : m[1]);
-    else values.push(m[3].includes("$") || m[3].includes("`") ? null : m[3]);
+    // Unquoted, the shell splits an expansion into words, so even a value flag's value can add flags.
+    else if (/[$`{}]/.test(m[3])) { values.push(null); hard = true; }
+    else values.push(m[3]);
   }
-  return check(values);
+  return check(values, hard);
+}
+
+// Where the string literal holding text[at] opens, or -1 when text[at] is outside every string.
+function stringAround(text, at) {
+  let q = null, start = -1;
+  for (let i = 0; i < at; i++) {
+    const c = text[i];
+    if (q) { if (c === "\\") i++; else if (c === q) q = null; continue; }
+    if (c === '"' || c === "'" || c === "`") { q = c; start = i; }
+  }
+  return q ? start : -1;
+}
+
+// A call inside a string literal (JS, Python): only that string's text, or null when more text is
+// joined to it (+, .format, %, an f-string's {}, a string continued on the next line, R-1).
+function inString(lines, line, at, quoteAt) {
+  const q = at[quoteAt];
+  let end = -1;
+  for (let i = quoteAt + 1; i < at.length; i++) {
+    if (at[i] === "\\") { i++; continue; }
+    if (at[i] === q) { end = i; break; }
+  }
+  if (end < 0) return null;
+  const body = at.slice(quoteAt + 1, end), tail = at.slice(end + 1);
+  if (!/^\s*(?:[),;\]}]|$)/.test(tail)) return null;
+  if (!tail.trim() && /^(?:[+.%]|[rRbBuUfF]{0,2}["'`])/.test((lines[line] || "").trim())) return null;
+  if (/(?:^|[^\w])(?:[fF][rRbB]?|[rRbB][fF])$/.test(at.slice(0, quoteAt)) && body.includes("{")) return null;
+  return body;
 }
 
 // The arguments of the claude call on 1-based line `line` of file {file, text}.
@@ -110,9 +141,13 @@ export function callArgs({ text }, line) {
   // A shell call: "claude -p ...", with continuation lines, or inside a template string.
   const sh = /(^|[\s;&|("'`])claude(?:\.exe|\.cmd)?(?=\s+-)/.exec(at);
   if (!sh) return unknown;
+  const name = sh.index + sh[1].length, open = stringAround(at, name);
+  if (open >= 0) {
+    const body = inString(lines, line, at, open);
+    return body === null ? unknown : fromShell(body.slice(name + sh[0].length - sh[1].length - open - 1));
+  }
   let rest = at.slice(sh.index + sh[0].length);
-  if (sh[1] === "`") rest = rest.split("`")[0];
-  else for (let i = line; /\s\\$/.test(lines[i - 1] || "") && i < lines.length; i++) rest += ` ${lines[i]}`;
+  for (let i = line; /\s\\$/.test(lines[i - 1] || "") && i < lines.length; i++) rest += ` ${lines[i]}`;
   return fromShell(rest);
 }
 

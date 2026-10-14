@@ -81,6 +81,35 @@ test("shell and Python calls", () => {
   assert.equal(run([tpl]).status, "unknown");
 });
 
+// R-1 (release review): a command string that more text is joined to is not literal.
+test("a command string built by +, an f-string, .format, % or a next-line string is unknown", () => {
+  for (const [file, text] of [
+    ["scripts/a.mjs", `execSync("claude -p --tools '' --strict-mcp-config " + extra);\n`],
+    ["scripts/b.mjs", "execSync(`claude -p --safe-mode ` + extra);\n"],
+    ["scripts/h.mjs", `execSync("cd app && claude -p --tools '' --safe-mode " + extra);\n`],
+    ["tools/c.py", `subprocess.run(f"claude -p --tools '' --safe-mode {extra}", shell=True)\n`],
+    ["tools/d.py", `subprocess.run("claude -p --tools '' --safe-mode {}".format(extra), shell=True)\n`],
+    ["tools/e.py", `subprocess.run("claude -p --tools '' --safe-mode %s" % extra, shell=True)\n`],
+    ["tools/f.py", `cmd = ("claude -p --tools '' --safe-mode "\n       "--mcp-config servers.json")\n`],
+    ["bin/g.sh", "claude -p --safe-mode --tools '' --model $MODEL\n"],
+  ]) {
+    const p = run([{ file, text }]);
+    assert.equal(p.status, "unknown", text);
+    assert.deepEqual(p.off, {}, text);
+  }
+});
+
+test("a whole command string with nothing joined to it stays literal", () => {
+  const js = { file: "scripts/a.mjs", text: `execSync("claude -p --tools '' --strict-mcp-config", { stdio: "inherit" });\n` };
+  assert.deepEqual(Object.keys(run([js]).off).sort(), ["mcp", "tools"]);
+  const mid = { file: "scripts/m.mjs", text: `execSync("cd app && claude -p --tools '' --strict-mcp-config");\n` };
+  assert.deepEqual(Object.keys(run([mid]).off).sort(), ["mcp", "tools"]);
+  const py = { file: "tools/b.py", text: `subprocess.run("claude -p --safe-mode --tools ''", shell=True)\n` };
+  assert.deepEqual(Object.keys(run([py]).off).sort(), ["hooks", "mcp", "plugins", "skills", "tools"]);
+  const quotedVar = { file: "bin/c.sh", text: 'claude -p --safe-mode --model "$MODEL" "summarize"\n' };
+  assert.equal(run([quotedVar]).status, "known", "a quoted variable after a value flag is only a value");
+});
+
 test("what .claude/ switches on is never off", () => {
   const files = [spawnFile(LITERAL), { file: ".claude/skills/s/SKILL.md", text: "a skill" }];
   const p = run(files, { hooks: [{ event: "Stop", type: "command", source: ".claude/settings.json", file: "inline" }], plugins: 1, mcpJson: true });
