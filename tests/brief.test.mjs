@@ -148,3 +148,20 @@ test("B-41: docs/ when it already holds briefs; docs/briefs/ when that exists or
   assert.equal(briefDirFor(root, "c"), "c/docs/briefs", "an existing docs/briefs/ wins");
   assert.equal(briefDirFor(root, "d"), "d/briefs");
 });
+
+// B-37 (brief part): each entry speaks for its own project.
+test("B-37: the project's own score, band, reason and code's check; non-test files first; the risk reason only when exposed here", () => {
+  const item = it({ why: "Another project's reason.", riskWhy: "Someone else's alias is exposed.", urgencyLabel: "urgent",
+    ratings: [{ project: "app", score: 7.5, lo: 5, hi: 8.4, evidence: "upgrade", why: "Moves the scorer off a slower model.", note: "upgrade from claude-sonnet-4-6",
+      foundIn: [{ term: "claude-sonnet-4-6", file: "src/models.test.ts:3" }, { term: "claude-sonnet-4-6", file: "src/models.ts:12" }] },
+      { project: "web", score: 9, lo: 7, hi: 10, evidence: "confirmed", why: "web's reason", note: "", foundIn: [] }] });
+  const md = buildBrief("app", [item], opts);
+  assert.match(md, /^Rated 7\.5 for app \(soon\)\. Why: Moves the scorer off a slower model\.$/m);
+  assert.match(md, /^Code's check: upgrade from claude-sonnet-4-6$/m);
+  assert.match(md, /Found in this project: `claude-sonnet-4-6` in `src\/models\.ts:12`, `claude-sonnet-4-6` in `src\/models\.test\.ts:3`/);
+  assert.doesNotMatch(md, /Another project's reason|Someone else's alias|web's reason/);
+  assert.match(md, /· soon ·/, "the tags carry this project's band");
+  const exposed = it({ riskWhy: "Its deny list changes.", ratings: [{ project: "app", score: 8, lo: 7, hi: 10, evidence: "confirmed", why: "", note: "", foundIn: [{ term: "x", file: "a.ts" }] }] });
+  assert.match(buildBrief("app", [exposed], opts), /^Risk: Its deny list changes\.$/m);
+  assert.match(buildBrief("app", [it({ why: "Lens reason." })], opts), /^Why it was flagged: Lens reason\.$/m, "no rating: the lens's reason, as before");
+});
