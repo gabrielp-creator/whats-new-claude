@@ -34,9 +34,13 @@ export function loadRows(dir, { evidence = true } = {}) {
       ...merge(i, lenses.impact.get(i.id), lenses.type.get(i.id), lenses.risk.get(i.id)),
     };
     const evs = ev.get(i.id) || [];
-    // Projects code tied after the lenses (verify.mjs, M3): stored, so every reader sees the same rows.
+    // Ties code added or dropped after the lenses (verify.mjs, M3): stored, so every reader sees the
+    // same rows. A dropped tie leaves projects (the rater never sees it) and is listed in dropped.
+    const drops = evs.filter((e) => e.dropped);
+    const gone = new Set(drops.map((e) => e.project));
     const tied = evs.filter((e) => e.tiedBy && e.tiedBy !== "lens" && !e.dropped && !row.projects.includes(e.project)).map((e) => e.project);
-    if (tied.length) row.projects = [...row.projects, ...tied];
+    if (tied.length || gone.size) row.projects = [...row.projects.filter((p) => !gone.has(p)), ...tied];
+    row.dropped = drops.map((e) => ({ project: e.project, reason: e.dropped, why: e.why }));
     const withEvidence = { ...applyEvidence(row, evs), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
     const stored = rated.get(i.id) || null;
     // toRate: rate-run.mjs should (re)rate it: never rated, or rated under a range that has since changed.

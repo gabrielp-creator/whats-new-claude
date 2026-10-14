@@ -35,3 +35,30 @@ export function modelTies(row, models) {
   }
   return out;
 }
+
+// B-58: an SDK's release items concern the projects that depend on that SDK, and only those.
+const SDK_PACKAGES = {
+  "agent-sdk-ts": { names: ["@anthropic-ai/claude-agent-sdk"], where: "package.json" },
+  "agent-sdk-py": { names: ["claude-agent-sdk", "claude_agent_sdk"], where: "pyproject.toml or requirements file" },
+};
+
+// profiles: profile.json (packages per project, lib/profile.mjs); partial: projects whose walk hit the
+// file cap, so a manifest may be unread. {add: [{project, tiedBy: "sdk", ids}], drop: [{project,
+// reason, why}]}: a lens tie to a project whose manifests were all read and hold no such package is
+// dropped (the package is what the item changes, B-53); a project without a profile is unknown.
+export function sdkTies(row, profiles, { partial = new Set() } = {}) {
+  const sdk = SDK_PACKAGES[row.source];
+  if (!sdk || !profiles) return { add: [], drop: [] };
+  const has = (project) => (profiles[project]?.packages || []).filter((p) => sdk.names.includes(p.name)).map((p) => p.name);
+  const lens = new Set(row.projects || []);
+  const drop = [...lens].filter((p) => profiles[p] && !partial.has(p) && !has(p).length)
+    .map((project) => ({ project, reason: "no-sdk-package", why: `no ${sdk.names[0]} in any ${sdk.where} of this project` }));
+  const add = row.fyiOnly ? [] : Object.keys(profiles).filter((p) => !lens.has(p) && has(p).length).map((project) => ({ project, tiedBy: "sdk", ids: has(project) }));
+  return { add, drop };
+}
+
+// Every code-made tie change for one item, in the order verify.mjs applies them.
+export function codeTies(row, { models, profiles, partial } = {}) {
+  const sdk = sdkTies(row, profiles, { partial });
+  return { add: [...modelTies(row, models), ...sdk.add], drop: sdk.drop };
+}

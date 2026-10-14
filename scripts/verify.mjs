@@ -23,7 +23,7 @@ import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
 import { readVersion, versionFor } from "./lib/version.mjs";
-import { modelTies } from "./lib/ties.mjs";
+import { codeTies } from "./lib/ties.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -78,15 +78,23 @@ for (const p of config.projects) {
   for (const a of archives) console.log(`  ${a.file}: quotes ${a.items} release items, read as mentions only`);
 }
 
-// Ties first (M3, P-25): code adds the projects whose own models the item is about (B-48), and the
-// lenses' "no effect" filter below applies to the lenses' ties only. Each code-made tie gets an
-// evidence row with tiedBy, so loadRows adds the project without recomputing anything.
+// Ties first (M3, P-25): code adds the projects whose own models the item is about (B-48) or that
+// depend on the SDK it changes (B-58), and drops lens ties the project's own manifests rule out. The
+// lenses' "no effect" filter below applies to the lenses' ties only. Each code-made tie and each drop
+// gets an evidence row (tiedBy, dropped), so loadRows applies them without recomputing anything.
 const out = [];
-let confirmed = 0, mentioned = 0, notFound = 0, added = 0;
+let confirmed = 0, mentioned = 0, notFound = 0;
+const added = {}, droppedBy = {};
 for (const r of rows) {
-  const ties = new Map(modelTies(r, models).map((t) => [t.project, t]));
-  added += ties.size;
-  const projects = [...(r.effect === "none" && !r.riskExposed ? [] : r.projects), ...ties.keys()];
+  const change = codeTies(r, { models, profiles, partial });
+  const ties = new Map(change.add.map((t) => [t.project, t]));
+  const dropped = new Map(change.drop.map((d) => [d.project, d]));
+  for (const t of change.add) added[t.tiedBy] = (added[t.tiedBy] || 0) + 1;
+  for (const d of change.drop) {
+    droppedBy[d.reason] = (droppedBy[d.reason] || 0) + 1;
+    out.push({ id: r.id, project: d.project, tiedBy: "lens", dropped: d.reason, why: d.why, checked: [], found: [], mentioned: [] });
+  }
+  const projects = [...(r.effect === "none" && !r.riskExposed ? [] : r.projects.filter((p) => !dropped.has(p))), ...ties.keys()];
   const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
   const conds = profileTerms(`${r.title || ""} ${r.text || ""}`);
   const tag = (proj) => (ties.has(proj) ? { tiedBy: ties.get(proj).tiedBy, ties: ties.get(proj).ids } : { tiedBy: "lens" });
@@ -111,5 +119,6 @@ for (const r of rows) {
 writeJsonl(join(DATA, "evidence.jsonl"), out);
 writeJson(join(DATA, "models.json"), models);
 writeJson(join(DATA, "profile.json"), profiles);
-console.log(`ties: ${added} (item, project) pair${added === 1 ? "" : "s"} added by model (the project's own models are in the item's scope)`);
+const drops = Object.values(droppedBy).reduce((a, b) => a + b, 0);
+console.log(`ties: ${added.model || 0} added by model, ${added.sdk || 0} by SDK package; ${drops} dropped${drops ? ` (${Object.entries(droppedBy).map(([k, n]) => `${n} ${k}`).join(", ")})` : ""}; dropped ties are kept for the "Not used here" list`);
 console.log(`evidence: ${confirmed} item(s) confirmed in your config or code, ${mentioned} only mentioned (docs, data, comments), ${notFound} checked and not found`);

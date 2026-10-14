@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
-import { modelTies, API, RUNTIME } from "../scripts/lib/ties.mjs";
+import { modelTies, sdkTies, API, RUNTIME } from "../scripts/lib/ties.mjs";
 import { loadRows } from "../scripts/lib/rows.mjs";
 import { readJsonl } from "../scripts/lib/store.mjs";
 
@@ -113,5 +113,69 @@ test("verify stores code ties in evidence.jsonl with tiedBy, and loadRows adds t
   const { rows } = loadRows(data);
   assert.deepEqual(rows.find((x) => x.id === "platform:2026-10-07:2").projects, ["app"]);
   assert.deepEqual(rows.find((x) => x.id === "platform:2026-10-07:3").projects, []);
-  assert.match(r.stdout, /ties: 1 \(item, project\) pair added by model/);
+  assert.match(r.stdout, /ties: 1 added by model,/);
+});
+
+// B-58 (LNC 5): SDK items reach only projects that have that SDK, and every project that has it.
+const profile = (packages) => ({ packages: packages.map((name) => ({ name, file: "package.json" })) });
+const PROFILES = {
+  setup: profile([]),
+  app: profile(["@anthropic-ai/sdk"]), // the API SDK only
+  agent: profile(["@anthropic-ai/claude-agent-sdk"]),
+  pyagent: { packages: [{ name: "claude-agent-sdk", file: "pyproject.toml" }] },
+  big: profile([]), // walk capped: its manifests may be unread
+};
+const sdk = (r, partial = new Set(["big"])) => {
+  const { add, drop } = sdkTies(r, PROFILES, { partial });
+  return { add: add.map((t) => `${t.project}:${t.tiedBy}:${t.ids.join(",")}`), drop: drop.map((d) => `${d.project}:${d.reason}`) };
+};
+
+test("an SDK item the lens tied to a project without that SDK is dropped, with the reason kept", () => {
+  const r = row({ source: "agent-sdk-ts", type: "breaking-or-deprecation", text: "Changed `query()` to reject unknown options", projects: ["app", "setup", "big"] });
+  const { drop } = sdkTies(r, PROFILES, { partial: new Set(["big"]) });
+  assert.deepEqual(drop.map((d) => d.project), ["app", "setup"], "a capped walk is unknown: never dropped (P-2)");
+  assert.equal(drop[0].reason, "no-sdk-package");
+  assert.match(drop[0].why, /@anthropic-ai\/claude-agent-sdk/);
+});
+
+test("a project with the SDK gains that SDK's items; the other SDK's items stay with their own users", () => {
+  const ts = row({ source: "agent-sdk-ts", type: "bug-fix", risk: "none", text: "Fixed `query()` hanging", projects: [] });
+  assert.deepEqual(sdk(ts), { add: ["agent:sdk:@anthropic-ai/claude-agent-sdk"], drop: [] });
+  const py = { ...ts, source: "agent-sdk-py" };
+  assert.deepEqual(sdk(py), { add: ["pyagent:sdk:claude-agent-sdk"], drop: [] });
+  assert.deepEqual(sdk({ ...ts, projects: ["agent", "pyagent"] }), { add: [], drop: ["pyagent:no-sdk-package"] });
+});
+
+test("the package gate is for SDK sources only, and FYI items gain no ties", () => {
+  assert.deepEqual(sdk(row({ source: "claude-code", text: "Fixed a hang", projects: ["app"] })), { add: [], drop: [] });
+  assert.deepEqual(sdk(row({ source: "agent-sdk-ts", fyiOnly: true, text: "Fixed a hang", projects: [] })), { add: [], drop: [] });
+  assert.deepEqual(sdkTies(row({ source: "agent-sdk-ts", text: "x", projects: ["app"] }), undefined, { partial: new Set() }), { add: [], drop: [] }, "no profiles: nothing known");
+});
+
+test("verify keeps a dropped tie in evidence.jsonl; loadRows removes the project and lists it as dropped (P-19)", () => {
+  const ws = mkdtempSync(join(tmpdir(), "wnc-ws-")), home = mkdtempSync(join(tmpdir(), "wnc-home-")), data = mkdtempSync(join(tmpdir(), "wnc-data-"));
+  mkdirSync(join(ws, "app", "orchestrator"), { recursive: true });
+  writeFileSync(join(ws, "app", "orchestrator", "package.json"), JSON.stringify({ dependencies: { "@anthropic-ai/sdk": "^1.0.0" } }));
+  mkdirSync(join(ws, "agent"), { recursive: true });
+  writeFileSync(join(ws, "agent", "package.json"), JSON.stringify({ dependencies: { "@anthropic-ai/claude-agent-sdk": "^0.3.0" } }));
+  mkdirSync(join(home, ".claude"), { recursive: true });
+  writeFileSync(join(data, "config.json"), JSON.stringify({ workspaceRoot: ws, projects: [
+    { id: "app", description: "An app", path: "app", briefDir: "app/docs" },
+    { id: "agent", description: "An agent", path: "agent", briefDir: "agent/docs" },
+  ] }));
+  const items = [{ id: "agent-sdk-ts:v0.3.280:1", source: "agent-sdk-ts", date: "2026-10-08", title: "v0.3.280", text: "Fixed `canUseTool` being skipped for subagents", url: "https://github.com/anthropics/claude-agent-sdk-typescript/releases/tag/v0.3.280", provenance: "anthropic-release", tripwires: [] }];
+  writeFileSync(join(data, "items.jsonl"), jsonl(items));
+  writeFileSync(join(data, "lens-impact.jsonl"), jsonl(items.map((i) => ({ id: i.id, effect: "fixes", projects: ["app"], new_work: false, strength: "medium", why: "w", injection: false }))));
+  writeFileSync(join(data, "lens-type.jsonl"), jsonl(items.map((i) => ({ id: i.id, type: "bug-fix", action: "read", injection: false }))));
+  writeFileSync(join(data, "lens-risk.jsonl"), jsonl(items.map((i) => ({ id: i.id, risk: "none", exposed: false, why: "rw", injection: false }))));
+  const r = spawnSync(process.execPath, [join(import.meta.dirname, "..", "scripts", "verify.mjs"), "--data", data], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home } });
+  assert.equal(r.status, 0, r.stderr);
+
+  const ev = readJsonl(join(data, "evidence.jsonl"));
+  assert.deepEqual(ev.map((e) => [e.project, e.tiedBy, e.dropped ?? null]), [["app", "lens", "no-sdk-package"], ["agent", "sdk", null]]);
+  const got = loadRows(data).rows[0];
+  assert.deepEqual(got.projects, ["agent"]);
+  assert.deepEqual(got.dropped.map((d) => [d.project, d.reason]), [["app", "no-sdk-package"]]);
+  assert.equal(got.ratings.some((x) => x.project === "app"), false, "the rater never sees a dropped tie");
+  assert.match(r.stdout, /1 by SDK package; 1 dropped/);
 });
