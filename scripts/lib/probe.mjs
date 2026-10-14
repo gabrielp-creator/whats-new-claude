@@ -20,7 +20,7 @@ export function extractTerms(text) {
   const out = [];
   for (const re of [CODE, MODEL, NPM, SDK, ENV, CAMEL, PASCAL]) for (const m of String(text || "").matchAll(re)) {
     const t = m[1].replace(/[.,;:]+$/, "");
-    if (t.length < 4 || STOP.has(t) || GENERIC.test(t) || /^\d/.test(t)) continue;
+    if (t.length < 4 || STOP.has(t) || GENERIC.test(t) || /^\d/.test(t) || /^[a-z]+:\/\/$/i.test(t)) continue; // "http://" is not a name
     if (re === CODE && !/[-_./:@\d]|[a-z][A-Z]/.test(t)) continue; // a plain word in code formatting is not a name
     if (re === CAMEL && t.length < 8) continue; // short camelCase words are noise
     if (re === ENV && t.length < 6) continue;

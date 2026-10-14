@@ -11,6 +11,7 @@ test("pulls concrete names out of release text", () => {
 test("ignores generic words and short or noisy spans", () => {
   const t = extractTerms("Fixed a bug in the `ui`. Improved JSON output and README. `a long phrase with spaces` and `true`.");
   assert.deepEqual(t, []);
+  assert.deepEqual(extractTerms("a deny rule written for `http://` or `https://` hosts"), [], "a URL scheme alone is not a name");
 });
 
 test("token index finds identifiers with surrounding punctuation, by exact case", () => {

@@ -23,7 +23,7 @@ import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
 import { readVersion, versionFor } from "./lib/version.mjs";
-import { codeTies, cliTies } from "./lib/ties.mjs";
+import { codeTies, cliTies, tripwireTies } from "./lib/ties.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -110,6 +110,12 @@ for (const r of rows) {
   const cli = cliTies(current, profiles, { confirmed: new Set([...results].filter(([, x]) => x?.found.length).map(([p]) => p)) });
   for (const a of cli.add) ties.set(a.project, a);
   const cliDrop = new Map(cli.drop.map((d) => [d.project, d])), held = new Map(cli.hold.map((d) => [d.project, d]));
+  // A tripwire item still tied to nobody is checked against every project (B-66).
+  const remaining = [...current.projects.filter((p) => !cliDrop.has(p)), ...cli.add.map((a) => a.project)];
+  if (!remaining.length) {
+    for (const p of indexes.keys()) if (!results.has(p)) results.set(p, check(p));
+    for (const t of tripwireTies({ ...r, projects: remaining }, results, { dropped: new Set([...dropped.keys(), ...cliDrop.keys()]), profiles, partial })) ties.set(t.project, t);
+  }
   for (const t of ties.values()) added[t.tiedBy] = (added[t.tiedBy] || 0) + 1;
   heldCount += held.size;
   for (const d of [...change.drop, ...cliDrop.values()]) droppedBy[d.reason] = (droppedBy[d.reason] || 0) + 1;
@@ -133,5 +139,5 @@ writeJsonl(join(DATA, "evidence.jsonl"), out);
 writeJson(join(DATA, "models.json"), models);
 writeJson(join(DATA, "profile.json"), profiles);
 const drops = Object.values(droppedBy).reduce((a, b) => a + b, 0);
-console.log(`ties: ${added.model || 0} added by model, ${added.sdk || 0} by SDK package, ${added.setup || 0} moved to setup; ${drops} dropped${drops ? ` (${Object.entries(droppedBy).map(([k, n]) => `${n} ${k}`).join(", ")})` : ""}, kept for the "Not used here" list; ${heldCount} security, breaking or deprecation item(s) kept with a note`);
+console.log(`ties: ${added.model || 0} added by model, ${added.sdk || 0} by SDK package, ${added.tripwire || 0} by tripwire term, ${added.setup || 0} moved to setup; ${drops} dropped${drops ? ` (${Object.entries(droppedBy).map(([k, n]) => `${n} ${k}`).join(", ")})` : ""}, kept for the "Not used here" list; ${heldCount} security, breaking or deprecation item(s) kept with a note`);
 console.log(`evidence: ${confirmed} item(s) confirmed in your config or code, ${mentioned} only mentioned (docs, data, comments), ${notFound} checked and not found`);

@@ -46,10 +46,17 @@ const SDK_PACKAGES = {
 // file cap, so a manifest may be unread. {add: [{project, tiedBy: "sdk", ids}], drop: [{project,
 // reason, why}]}: a lens tie to a project whose manifests were all read and hold no such package is
 // dropped (the package is what the item changes, B-53); a project without a profile is unknown.
+const sdkHas = (sdk, profile) => (profile?.packages || []).filter((p) => sdk.names.includes(p.name)).map((p) => p.name);
+// False only when the item is an SDK's and the project's manifests were all read without that package.
+const sdkAllows = (row, project, profiles, partial) => {
+  const sdk = SDK_PACKAGES[row.source];
+  return !sdk || !profiles?.[project] || partial.has(project) || sdkHas(sdk, profiles[project]).length > 0;
+};
+
 export function sdkTies(row, profiles, { partial = new Set() } = {}) {
   const sdk = SDK_PACKAGES[row.source];
   if (!sdk || !profiles) return { add: [], drop: [] };
-  const has = (project) => (profiles[project]?.packages || []).filter((p) => sdk.names.includes(p.name)).map((p) => p.name);
+  const has = (project) => sdkHas(sdk, profiles[project]);
   const lens = new Set(row.projects || []);
   const drop = [...lens].filter((p) => profiles[p] && !partial.has(p) && !has(p).length)
     .map((project) => ({ project, reason: "no-sdk-package", why: `no ${sdk.names[0]} in any ${sdk.where} of this project` }));
@@ -101,6 +108,18 @@ export function cliTies(row, profiles, { confirmed = new Set(), setup = "setup" 
   }
   const add = (drop.length || hold.length) && profiles[setup] && !(row.projects || []).includes(setup) ? [{ project: setup, tiedBy: "setup", ids: [] }] : [];
   return { drop, hold, add };
+}
+
+// B-66: a first-party security, breaking, deprecation or retirement item tied to no project, after
+// every other tie change, is checked against every project. results: project -> verify.mjs's file
+// check ({found, mentioned}, or null), where found is config or code only (B-47), never a mention.
+// One steered lens batch can tie a real fix to nobody (P-27); its terms in a project's code tie it back.
+// dropped: projects code dropped for this item, never tied back; an SDK item also needs the SDK
+// (B-58's package check is decisive: a generic word like `session_id` is not the SDK).
+export function tripwireTies(row, results, { dropped = new Set(), profiles, partial = new Set() } = {}) {
+  if (!isTripwire(row) || (row.projects || []).length) return [];
+  return [...results].filter(([p, x]) => x?.found.length && !dropped.has(p) && sdkAllows(row, p, profiles, partial))
+    .map(([project, x]) => ({ project, tiedBy: "tripwire", ids: [...new Set(x.found.map((f) => f.term))] }));
 }
 
 // Every code-made tie change for one item, in the order verify.mjs applies them.
