@@ -21,6 +21,8 @@ test("modelRefs finds ids and prose names in release text, deduplicated", () => 
   assert.deepEqual(modelRefs("On Claude Fable 5.1 and Claude Mythos 5.1, tool_choice").map((m) => m.id), ["claude-fable-5-1", "claude-mythos-5-1"]);
   assert.deepEqual(modelRefs("Sonnet 4.5 retires on 2026-11-01").map((m) => m.id), ["claude-sonnet-4-5"]);
   assert.deepEqual(modelRefs("an opus 5 poem, Haiku about spring, version 2.1.280"), [], "lowercase words and bare family names are not model names");
+  assert.deepEqual(modelRefs("a \"switch to Opus 1M for 5x more context\" tip; Sonnet/Opus 1M for subscribers"), [], "a context size is not a version");
+  assert.deepEqual(modelRefs("Opus 4.8's effort, Sonnet 5.5."), modelRefs("claude-opus-4-8 claude-sonnet-5-5"));
 });
 
 const opus55 = modelRefs("Added Claude Opus 5.5 (`claude-opus-5-5`)");

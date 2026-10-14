@@ -8,8 +8,9 @@ const FAMILIES = "opus|sonnet|haiku|fable|mythos";
 const ID = new RegExp(`\\bclaude-(${FAMILIES})-(\\d{1,2})(?:-(\\d{1,2}))?(?!\\d)`, "gi");
 // claude-3-5-sonnet-20241022, claude-3-opus-20240229
 const OLD_ID = /\bclaude-(\d)(?:-(\d))?-(opus|sonnet|haiku)\b/gi;
-// "Claude Opus 5.5", "Sonnet 4.5": capitalised, with a version, as release notes write them
-const PROSE = /\b(?:Claude )?(Opus|Sonnet|Haiku|Fable|Mythos) (\d{1,2})(?:\.(\d{1,2}))?(?!\.?\d)/g;
+// "Claude Opus 5.5", "Sonnet 4.5": capitalised, with a version, as release notes write them ("Opus 1M"
+// is a context size)
+const PROSE = /\b(?:Claude )?(Opus|Sonnet|Haiku|Fable|Mythos) (\d{1,2})(?:\.(\d{1,2}))?(?![.\d]*[\dA-Za-z])/g;
 
 const model = (family, major, minor) => {
   const f = family.toLowerCase(), v = [Number(major), Number(minor || 0)];
