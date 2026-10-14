@@ -64,6 +64,8 @@ export function launchedWith(rows) {
 }
 
 const isBreaking = (row) => row.risk === "breaking" || row.risk === "deprecation" || row.type === "breaking-or-deprecation";
+// "2.1.289" older than "2.1.290": numeric, part by part (B-52).
+const olderThan = (a, b) => { const x = a.split(".").map(Number), y = b.split(".").map(Number); for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] < y[i]; return false; };
 
 // The extra name verify.mjs looks up for a price change: a caching price matters only to code that
 // marks cache breakpoints.
@@ -271,10 +273,22 @@ export function bounds(row, project, evs, models) {
     }
     if ((row.urgencyBy === "floor" || row.urgencyBy === "exposed") && !(evidence === "confirmed" && lensesAgree(row))) lower("soon");
   }
+  // B-52 (Gabriel, 2026-10-13): a Claude Code item at or below the version this project runs, with no
+  // confirmation in its config, is already in that version: one line, later, "read". New capabilities
+  // and breaking items stay rated (P-6); a security item stays in soon with the note (P-4); no version
+  // that parses, no group (P-17).
+  let installed;
+  const tag = /^v?(\d+\.\d+\.\d+)$/.exec(String(row.title || ""))?.[1];
+  if (row.source === "claude-code" && inv?.claudeCode && tag && !olderThan(inv.claudeCode, tag) && evidence !== "confirmed"
+    && !fresh && row.type !== "new-capability" && !isBreaking(row) && !row.codeMade) {
+    installed = inv.claudeCode;
+    if (isTripwire(row)) { lower("soon"); hi = Math.min(hi, NOT_USED_TRIPWIRE_CAP); } else lower("later");
+    note = note ? `${note}; already in your version (${installed})` : `already in your version (${installed})`;
+  }
   // B-40 (AK 4): only setup and alias users run what a skill or default change touches; any other
   // project gets "read" at most, in the later band. A skill's default never moves an alias, so skill
   // commits cap alias users too (Gabriel, 2026-10-13). Tripwire items keep their band (P-4).
-  let readOnly = false;
+  let readOnly = Boolean(installed); // B-52: no prompt for a fix already installed
   if (project && project !== "setup" && (row.source === "skills" || !aliases.length) && isSkillOrDefault(row) && !isTripwire(row)) {
     readOnly = true; hi = Math.min(hi, BANDS.later[1]);
     const line = "a skill or default change: it shapes code Claude writes from now on, not your existing calls";
@@ -283,7 +297,7 @@ export function bounds(row, project, evs, models) {
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
   // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
   if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
-  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly };
+  return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note, readOnly, priceOnly, ...(installed ? { installed } : {}) };
 }
 
 export const codeScore = (row, b) => round1(b.lo + (b.hi - b.lo) * (STRENGTH_AT[row.strength] ?? 0.25));
@@ -312,9 +326,9 @@ export function rateRow(row, evs, orch, models) {
     if (b.readOnly && act !== "ignore") act = "read";
     if (b.priceOnly && act === "model-refresh") act = "read"; // a price or limit change needs no model change (B-57)
     return {
-      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note,
+      project, lo: b.lo, hi: b.hi, evidence: b.evidence, foundIn: b.foundIn, note: b.note, ...(b.installed ? { installed: b.installed } : {}),
       score: score ?? codeScore(row, b),
-      provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade,
+      provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade && !b.installed,
       do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)
       why: a && !injection ? oneLine(a.why) : "",
     };
@@ -360,8 +374,11 @@ export const seenFor = (row, evs, models) =>
 // An answer is stale when a project's range or evidence differs from what it was rated under, or a
 // project has no answer. Answers from before 0.3.0 have no "seen": they were rated without the model
 // check, so that is what they are compared with.
+// A project whose item is already in its installed version (B-52) needs no answer, so it never makes
+// an answer stale.
 export function staleRating(row, stored, evs, models) {
   const answered = new Set((stored?.ratings || []).map((a) => a.project));
   const now = seenFor(row, evs, models), then = stored?.seen || seenFor(row, evs, undefined);
-  return row.projects.some((p) => !answered.has(p) || !then[p] || then[p].join("|") !== now[p].join("|"));
+  return row.projects.filter((p) => !bounds(row, p, evs, models).installed)
+    .some((p) => !answered.has(p) || !then[p] || then[p].join("|") !== now[p].join("|"));
 }

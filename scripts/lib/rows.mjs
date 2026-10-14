@@ -47,9 +47,12 @@ export function loadRows(dir, { evidence = true, now = Date.now() } = {}) {
     row.dropped = drops.map((e) => ({ project: e.project, reason: e.dropped, why: e.why }));
     const withEvidence = { ...applyEvidence(row, evs, models), foundIn: evs.flatMap((e) => e.found.map((f) => ({ project: e.project, term: f.term, file: f.file }))) };
     const stored = rated.get(row.id) || null;
-    // toRate: rate-run.mjs should (re)rate it: never rated, or rated under a range that has since changed.
-    const toRate = needsOrchestrator(withEvidence) && withEvidence.projects.length > 0 && (!stored || staleRating(withEvidence, stored, evs, models));
-    return { ...withEvidence, ...rateRow(withEvidence, evs, stored, models), toRate };
+    // toRate: rate-run.mjs should (re)rate it: never rated, or rated under a range that has since changed,
+    // and some project still needs an answer (not one whose version already has it, B-52).
+    const rating = rateRow(withEvidence, evs, stored, models);
+    const open = rating.ratings.some((x) => x.project && !x.installed);
+    const toRate = needsOrchestrator(withEvidence) && open && (!stored || staleRating(withEvidence, stored, evs, models));
+    return { ...withEvidence, ...rating, toRate };
   });
   // B-4: code-made retirement rows (Gabriel, 2026-10-14), never sent to the rater.
   for (const row of retirementRows(models, new Date(now).toISOString().slice(0, 10))) {

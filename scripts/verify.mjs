@@ -76,7 +76,8 @@ for (const p of config.projects) {
   if (ix) indexes.set(p.id, ix);
   if (files?.capped) partial.add(p.id);
   if (ix) models[p.id] = { ...ix.models, claudeCalls: ix.claudeCalls, archives, partial: Boolean(files.capped),
-    retiring: deprecations ? retirementsFor(ix.models.used, deprecations.models, today) : null };
+    retiring: deprecations ? retirementsFor(ix.models.used, deprecations.models, today) : null,
+    claudeCode: profiles[p.id]?.claudeCode?.version ?? null }; // B-52: the Claude Code version this project runs
   // What the project's own scripted claude calls switch off (B-59); a capped walk may miss a call.
   if (ix) profiles[p.id].cli = files.capped ? { status: "unknown", calls: [], off: {} } : cliProfile(files, ix.claudeCalls, profiles[p.id]);
   const cli = profiles[p.id]?.cli;

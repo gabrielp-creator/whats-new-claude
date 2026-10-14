@@ -740,3 +740,49 @@ test("B-53: an item that adds a feature stays neutral when it also changes a nam
   const b = bounds(mixed, "app", [ev({ checked: ["PreModelSwitch", "PostModelSwitch", "SessionStart"], found: [] })]);
   assert.deepEqual([b.lo, b.hi], BANDS.soon);
 });
+
+// B-52 (SU 8, LNC 9, P-6, P-17): Claude Code fixes the installed version already has.
+const onCC = (version) => ({ app: { models: [], aliases: [], partial: false, claudeCode: version } });
+const ccFix = (o) => row({ source: "claude-code", title: "v2.1.290", urgencyLabel: "urgent", type: "bug-fix", risk: "none", text: "Fixed `/resume` losing the last turn after a crash", ...o });
+
+test("B-52: a Claude Code fix at or below the installed version, with no config evidence, is 'already in your version' (LNC 9)", () => {
+  const b = bounds(ccFix(), "app", [], onCC("2.1.296"));
+  assert.equal(b.installed, "2.1.296");
+  assert.deepEqual([b.lo, b.hi], BANDS.later);
+  assert.match(b.note, /already in your version \(2\.1\.296\)/);
+  assert.equal(b.readOnly, true, "one line, no prompt");
+  assert.equal(bounds(ccFix({ title: "v2.1.296" }), "app", [], onCC("2.1.296")).installed, "2.1.296", "the same version");
+});
+
+test("B-52: a security fix in the group stays in soon with the note (SU 8, P-4); a newer item is rated as now", () => {
+  const sec = ccFix({ type: "security", risk: "security", text: "Fixed a sandbox escape through symlinked paths" });
+  const b = bounds(sec, "app", [], onCC("2.1.296"));
+  assert.equal(b.installed, "2.1.296");
+  assert.deepEqual([b.lo, b.hi], [5, 6.9], "soon, below the 7+ list: nothing to do for a fix you have");
+  assert.match(b.note, /already in your version \(2\.1\.296\)/);
+  const newer = bounds(sec, "app", [], onCC("2.1.289"));
+  assert.equal(newer.installed, undefined);
+  assert.deepEqual([newer.lo, newer.hi], BANDS.urgent);
+});
+
+test("B-52: new capabilities, breaking items, config evidence and an unknown version stay rated (P-6, P-17)", () => {
+  assert.equal(bounds(ccFix({ type: "new-capability", text: "Added `/rewind` for sessions" }), "app", [], onCC("2.1.296")).installed, undefined, "a new capability");
+  assert.equal(bounds(ccFix({ type: "improvement", text: "Added `fooBarMode` to settings" }), "app", [ev({ checked: ["fooBarMode"], found: [] })], onCC("2.1.296")).installed, undefined, "an item that adds a name (B-53)");
+  assert.equal(bounds(ccFix({ type: "breaking-or-deprecation", risk: "behavior-change", text: "Changed `-p` to exit non-zero on a refused tool" }), "app", [], onCC("2.1.296")).installed, undefined, "a breaking Changed note");
+  assert.equal(bounds(ccFix(), "app", [ev({ checked: ["x"], found: [{ term: "permissions.deny", file: "settings.json" }] })], onCC("2.1.296")).installed, undefined, "the config interacts with it");
+  assert.equal(bounds(ccFix(), "app", [], onCC(null)).installed, undefined, "no version: no group (P-17)");
+  assert.equal(bounds(ccFix({ source: "agent-sdk-ts", title: "v0.2.290" }), "app", [], onCC("2.1.296")).installed, undefined, "Claude Code items only");
+});
+
+test("B-52: a project in the group never waits for or asks the rater", () => {
+  const fix = { ...ccFix(), projects: ["app", "web"] };
+  const models = { app: { models: [], aliases: [], partial: false, claudeCode: "2.1.296" }, web: { models: [], aliases: [], partial: false, claudeCode: "2.1.280" } };
+  const out = rateRow(fix, [], null, models).ratings;
+  const app = out.find((x) => x.project === "app"), web = out.find((x) => x.project === "web");
+  assert.equal(app.installed, "2.1.296");
+  assert.equal(app.provisional, false, "nothing to wait for");
+  assert.equal(web.provisional, true, "web runs an older version: rated as now");
+  const stored = { id: "x:1", ratings: [{ project: "web", score: 6 }], seen: { app: [7, 10, "unchecked"], web: seenFor(fix, [], models).web } };
+  assert.equal(staleRating(fix, stored, [], models), false, "app's band moved into the group: no new call for it");
+  assert.equal(staleRating({ ...fix, projects: ["app"] }, null, [], models), false, "an item with every project in the group is never rated");
+});

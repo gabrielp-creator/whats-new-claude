@@ -115,6 +115,8 @@ test("verify stores code ties in evidence.jsonl with tiedBy, and loadRows adds t
   assert.deepEqual(rows.find((x) => x.id === "platform:2026-10-07:2").projects, ["app"]);
   assert.deepEqual(rows.find((x) => x.id === "platform:2026-10-07:3").projects, []);
   assert.match(r.stdout, /ties: 1 added by model,/);
+  const models = JSON.parse(readFileSync(join(data, "models.json"), "utf8"));
+  assert.ok("claudeCode" in models.app && "retiring" in models.app, "B-52 and B-4 inputs reach rate.mjs through models.json");
 });
 
 test("B-57 end to end: a caching price change is tied by model and checked for cache_control", () => {
