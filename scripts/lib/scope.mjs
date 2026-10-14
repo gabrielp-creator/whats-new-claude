@@ -21,14 +21,18 @@ const TOKEN = new RegExp([
   `\\bClaude (\\d{1,2})(?:\\.(x|\\d{1,2}))?(?=\\s+models?\\b|[,;:)]|\\.(?!\\d)|\\s+and\\b|\\s+or\\b|$)`, // 23-24 Claude 3.x
   `\\b(${FAM})\\b(?! \\d)`, // 25 Fable, Opus: a family with no version
 ].join("|"), "g");
-// A bare version continuing a named one: "Opus 4.7 and 4.8", "Sonnet 4.5, 4.6".
-const MORE = /^(?:\s*,\s*|\s*,?\s+(?:and|or)\s+)(\d{1,2})\.(\d{1,2})(?![\d.]*\d)(?!\+)/;
+// A bare version continuing a named one: "Opus 4.7 and 4.8", "Sonnet 4.5, 4.6", and a whole one
+// that ends a clause: "Opus 4.8 and 5 and newer" (R-3).
+const MORE = /^(?:\s*,\s*|\s*,?\s+(?:and|or)\s+)(?:(\d{1,2})\.(\d{1,2})(?![\d.]*\d)(?!\+)|(\d{1,2})(?=\s*(?:[,;:)]|\.(?!\d)|\s+(?:and|or)\b|$)))/;
+// A number right after a list that MORE did not read ("and 5+"): the scope is not understood.
+const UNREAD = /^\s*,?\s*(?:(?:and|or)\s+)?\d/;
 // Between two models of one list.
 const JOIN = /^(?:\s*,\s*|\s*,?\s+(?:and|or)\s+|\s+)(?:Claude\s+)?$/;
-// "and newer models", ", or later", "and earlier Claude models" right after a list.
-const AFTER = /^\s*,?\s+(?:and|or)\s+(?:a\s+)?(newer|later|above|higher|earlier|older)\b(?:\s+(?:Claude\s+)?(?:models?|ones?|versions?))?/;
-// Phrases that leave the set open: examples, classes of models, "a newer one".
-const OPEN = /\b(?:including|such as|e\.g\.|for example|models? that|models? with(?:out)?|(?:or|and) (?:a )?(?:newer|later|earlier|older) (?:one|model)s?|(?:newer|later|earlier|older|other|all|every|most|any|some|supported) (?:Claude )?models?)\b/i;
+// "and newer models", ", or later", "and earlier Claude models", "onwards", "and up" right after a list.
+const AFTER = /^\s*,?\s+(?:(?:and|or)\s+(?:a\s+)?(newer|later|above|higher|earlier|older|up|upwards?)\b|(onwards?|upwards?)\b)(?:\s+(?:Claude\s+)?(?:models?|ones?|versions?))?/;
+// Phrases that leave the set open: examples, classes of models, "a newer one", and a lower bound
+// named before the model ("starting with Opus 4.8", "newer than", "available from", R-3).
+const OPEN = /\b(?:including|such as|e\.g\.|for example|models? that|models? with(?:out)?|(?:or|and) (?:a )?(?:newer|later|earlier|older) (?:one|model)s?|(?:newer|later|earlier|older|other|all|every|most|any|some|supported) (?:Claude )?models?|starting (?:with|from|at)|(?:newer|later|higher|older|earlier) than|(?:available|supported|offered) from)\b/i;
 // "Earlier models aren't affected": a closing remark, not an open class of models.
 const UNAFFECTED = /\b(?:earlier|older|other|previous) (?:Claude )?models? (?:(?:aren't|are not|isn't|is not) (?:affected|changed)|(?:are|remain) un(?:affected|changed))\b/gi;
 // The first sentence says what the change is on: "Code written for X can break on Y", or the text
@@ -62,16 +66,21 @@ function lists(s) {
   let cur = null, end = 0;
   for (const m of s.matchAll(TOKEN)) {
     if (m.index < end) continue; // inside a continuation already read
-    const c = clauseOf(m);
+    let c = clauseOf(m);
     if (!c) continue;
+    // "claude-sonnet-4-latest" is an alias: it names a family, not a version (R-3).
+    if (m[1] && /^-latest\b/.test(s.slice(m.index + m[0].length))) c = { family: c.family, min: null, max: null, loose: true };
     c.text = m[0];
     if (!cur || !JOIN.test(s.slice(end, m.index))) { cur = { start: m.index, clauses: [] }; out.push(cur); }
     cur.clauses.push(c);
     end = m.index + m[0].length;
-    for (let n; c.family && c.min && (n = s.slice(end).match(MORE)); end += n[0].length) cur.clauses.push({ ...exact(c.family, v(n[1], n[2])), text: n[0].trim() });
+    for (let n; c.family && c.min && (n = s.slice(end).match(MORE)); end += n[0].length) cur.clauses.push({ ...exact(c.family, n[3] ? v(n[3]) : v(n[1], n[2])), text: n[0].trim() });
     cur.end = end;
   }
-  for (const l of out) l.after = s.slice(l.end).match(AFTER);
+  for (const l of out) {
+    l.after = s.slice(l.end).match(AFTER);
+    l.unread = !l.after && UNREAD.test(s.slice(l.end));
+  }
   return out;
 }
 
@@ -90,8 +99,9 @@ export function modelScope(text, { title = "" } = {}) {
   let open = "none", masked = scoped;
   const clauses = [];
   for (const l of [...from].reverse()) {
+    if (l.unread) open = "all";
     if (l.after) {
-      const up = /newer|later|above|higher/i.test(l.after[1]);
+      const up = /newer|later|above|higher|\bup|onward/i.test(l.after[0]);
       for (const c of l.clauses) if (up) c.max = null; else c.min = null;
       open = "others";
       masked = masked.slice(0, l.end) + " " + masked.slice(l.end + l.after[0].length); // right to left keeps offsets

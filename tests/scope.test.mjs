@@ -96,6 +96,26 @@ test("a bare version after a named one keeps its family: 'Opus 4.7 and 4.8'", ()
   each("Fixed `/advisor` pairing checks: Sonnet 5.5 can now advise Opus 4.7 and 4.8", { "claude-opus-4-8": "in", "claude-opus-4-7": "in", "claude-opus-5": "out" });
 });
 
+// R-3 (release review): wordings the parser did not read must land on "in" or "unknown", never "out".
+test("a bare whole version continues a list: 'Opus 4.8 and 5 and newer', 'Sonnet 4.5, 4.6 and 5'", () => {
+  each("Applies to Claude Opus 4.8 and 5 and newer.", { "claude-opus-4-8": "in", "claude-opus-5": "in", "claude-opus-5-5": "in", "claude-opus-4-6": "out" });
+  each("Usage is reported per block on Sonnet 4.5, 4.6 and 5.", { "claude-sonnet-5": "in", "claude-sonnet-4-6": "in", "claude-sonnet-4": "out" });
+  assert.notEqual(at("Sonnet 4.5, 4.6 and 5 now return usage per block.", "claude-sonnet-5"), "out", "a whole number before a word is not read, so unknown");
+  assert.notEqual(at("Opus 4.8 and 5+ get the new default.", "claude-opus-5-5"), "out", "a number the list did not read opens the scope");
+});
+
+test("upward wordings are open: onwards, and up, upwards; starting with, newer than, from", () => {
+  for (const t of ["Supported on Opus 4.8 onwards.", "Opus 4.8 and up get it.", "Opus 4.8 and upwards now cache tools."]) each(t, { "claude-opus-5-5": "in", "claude-opus-4-6": "out" });
+  for (const t of ["Starting with Opus 4.8, tool results are cached.", "Newer than Opus 4.8: thinking is on by default.", "Available from Opus 4.8 on the Claude API.", "Starting from Claude Sonnet 4.5, usage is reported per block."]) {
+    assert.notEqual(at(t, "claude-opus-5-5"), "out", t);
+    assert.notEqual(at(t, "claude-sonnet-5-5"), "out", t);
+  }
+});
+
+test("a '-latest' alias in the text names no version", () => {
+  assert.notEqual(at("Available for claude-sonnet-4-latest on the Claude API.", "claude-sonnet-4-5"), "out");
+});
+
 test("ids in the text, dated or old-style, count as exact models", () => {
   each("Requests to `claude-sonnet-4-5-20250929` now return a deprecation header", { "claude-sonnet-4-5": "in", "claude-sonnet-4-6": "out" });
   each("Fixed Claude 3 Opus and Claude 3.x Sonnet sessions being offered tool search", { "claude-3-opus-20240229": "in", "claude-3-5-sonnet-20241022": "in", "claude-opus-4": "out" });
