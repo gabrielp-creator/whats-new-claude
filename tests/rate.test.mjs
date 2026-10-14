@@ -786,3 +786,38 @@ test("B-52: a project in the group never waits for or asks the rater", () => {
   assert.equal(staleRating(fix, stored, [], models), false, "app's band moved into the group: no new call for it");
   assert.equal(staleRating({ ...fix, projects: ["app"] }, null, [], models), false, "an item with every project in the group is never rated");
 });
+
+// B-37 (rater part, NC 5): the per-project file:line evidence reaches the rater, not only the note.
+test("B-37: an upgrade carries every call site of the model it replaces to the rater and the brief", () => {
+  const opus = row({ type: "model", risk: "none", projects: ["app"], text: "We've launched Claude Opus 5.5 (claude-opus-5-5)." });
+  const sites = [{ file: "src/a.ts", line: 12 }, { file: "src/b.ts", line: 40 }];
+  const models = { app: { models: ["claude-opus-4-8"], used: [{ id: "claude-opus-4-8", file: "src/a.ts", line: 12, sites }], aliases: [], partial: false } };
+  const b = bounds(opus, "app", [], models);
+  assert.equal(b.evidence, "upgrade");
+  assert.deepEqual(b.foundIn, [{ term: "claude-opus-4-8", file: "src/a.ts:12" }, { term: "claude-opus-4-8", file: "src/b.ts:40" }]);
+  const p = ratePayload(opus, [], models).projects[0];
+  assert.deepEqual(p.found, ["claude-opus-4-8 in src/a.ts:12", "claude-opus-4-8 in src/b.ts:40"]);
+  const both = { app: { ...models.app, models: ["claude-opus-4-8", "claude-opus-5-5"], used: [...models.app.used, { id: "claude-opus-5-5", file: "src/c.ts", line: 3 }] } };
+  assert.deepEqual(bounds(opus, "app", [], both).foundIn.map((f) => f.file), ["src/c.ts:3"], "adopted: where the new model runs");
+});
+
+// P-12: the rater's raw score is kept, and a rater who disagrees with the band is flagged, never moving it.
+test("P-12: the raw score is stored and 'rater disagrees' is flagged when it is well below the band or says ignore", () => {
+  const r = row({ urgencyLabel: "soon", projects: ["app"] });
+  const at = (score, d = "read") => rateRow(r, [], { id: "x:1", ratings: [{ project: "app", score, do: d, why: "w" }] }).ratings[0];
+  const low = at(3);
+  assert.deepEqual([low.score, low.raw, low.disagrees], [5, 3, true], "clamped to the band, raw kept, flagged");
+  assert.equal(at(4.5).disagrees, false, "within a point of the band");
+  assert.equal(at(7, "ignore").disagrees, true, "ignore in a band that asks for a look");
+  assert.equal(at(7).disagrees, false);
+  const none = rateRow(r, [], null).ratings[0];
+  assert.equal(none.raw, null);
+  assert.equal(none.disagrees, false, "no answer, nothing to disagree with");
+});
+
+test("P-12: 'ignore' in the later band agrees with it; only a band that asks for action can be disagreed with that way", () => {
+  const later = row({ urgencyLabel: "later", projects: ["app"] });
+  const at = (score, d) => rateRow(later, [], { id: "x:1", ratings: [{ project: "app", score, do: d, why: "w" }] }).ratings[0];
+  assert.equal(at(3, "ignore").disagrees, false);
+  assert.equal(at(0.5, "read").disagrees, true, "still flagged when well below the band");
+});

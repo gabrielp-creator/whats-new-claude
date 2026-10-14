@@ -144,6 +144,10 @@ export function bounds(row, project, evs, models) {
   const inUse = scope ? (inv.used || uses.map((id) => ({ id }))).filter((u) => inScope(scope, u.id) === "in") : [];
   const at = (u) => (u.file ? `${u.file}:${u.line}` : "");
   const named = (u) => `${u.id}${u.file ? ` (${at(u)})` : ""}`;
+  // Every recorded call site of the given used models, as foundIn entries (B-37: for the rater and
+  // the brief, not only the note).
+  const cite = (us) => us.flatMap((u) => (u.sites?.length ? u.sites : u.file ? [u] : []).map((x) => ({ term: u.id, file: at(x) })));
+  const usedOf = (ids) => (inv?.used || uses.map((id) => ({ id }))).filter((u) => ids.includes(u.id));
   // Into a lower band, keeping any cap already set; never raises the lenses' band.
   const lower = (band) => { lo = Math.min(lo, BANDS[band][0]); hi = Math.min(hi, BANDS[band][1]); };
   // B-4: the project's pinned models that have a retirement date (verify.mjs, from the deprecations
@@ -178,10 +182,10 @@ export function bounds(row, project, evs, models) {
     const l = launchStatus(refs, uses);
     [lo, hi] = BANDS[row.urgencyLabel] || BANDS.none; // decided here, not by the generic check above
     if (l.status === "adopted") {
-      evidence = "adopted"; hi = Math.min(hi, ADOPTED_CAP);
+      evidence = "adopted"; hi = Math.min(hi, ADOPTED_CAP); foundIn = cite(usedOf(l.uses));
       note = `already uses ${list(l.uses)}${l.older.length ? ` (also ${list(l.older)})` : ""}: confirm settings and pricing`;
     } else if (l.status === "upgrade") {
-      evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`;
+      evidence = "upgrade"; note = `upgrade from ${list(l.uses)}`; foundIn = cite(usedOf(l.uses));
       const r = retiring(l.uses);
       if (r.length) { [lo, hi] = BANDS.urgent; due = true; note += `; ${retires(r)}`; } // AK 2
     } else if (exposed) {
@@ -206,7 +210,7 @@ export function bounds(row, project, evs, models) {
       note = `uses ${list(inUse.map(named))} but sends no \`cache_control\`: the cache price does not apply yet`;
     } else if (inUse.length) {
       lower("soon"); evidence = "confirmed";
-      foundIn = [...inUse.map((u) => ({ term: u.id, file: at(u) })), ...foundIn];
+      foundIn = [...cite(inUse), ...foundIn];
       note = `${what}: this project uses ${list(inUse.map(named))}`;
     } else if (inv.partial) {
       lower("soon"); evidence = "incomplete"; note = "file check incomplete: the project is larger than the search limit";
@@ -229,7 +233,7 @@ export function bounds(row, project, evs, models) {
     const launched = new Set((row.withLaunch || []).filter((id) => refs.some((r) => r.id === id)));
     const met = inUse.filter((u) => launched.has(u.id));
     const next = [...launched].filter((id) => inScope(scope, id) === "in" && !inUse.some((u) => u.id === id));
-    const cited = inUse.filter((u) => u.file).map((u) => ({ term: u.id, file: at(u) }));
+    const cited = cite(inUse);
     evidence = "confirmed";
     foundIn = [...cited, ...foundIn.filter((f) => !cited.some((c) => c.term === f.term))];
     if (met.length && row.risk !== "deprecation") {
@@ -321,6 +325,9 @@ export function rateRow(row, evs, orch, models) {
     const b = bounds(row, project, evs, models);
     const a = project ? answers.get(project) : null;
     const score = a ? clampScore(a.score, b) : null;
+    // P-12: the rater's own number, before the band clamps it, and whether it disagrees with the band
+    // (well below it, or "ignore"). Shown, never used to move the item.
+    const raw = a && typeof a.score === "number" && Number.isFinite(a.score) ? a.score : null;
     let act = a && ACTIONS.has(a.do) ? a.do : "read";
     if (row.fyiOnly && act === "try-feature") act = "read";
     if (b.readOnly && act !== "ignore") act = "read";
@@ -331,6 +338,7 @@ export function rateRow(row, evs, orch, models) {
       provisional: score === null && project !== null && needsOrchestrator(row) && !row.codeMade && !b.installed,
       do: a ? act : row.codeMade ? row.action : null, // a code-made row never waits for the rater (B-4)
       why: a && !injection ? oneLine(a.why) : "",
+      raw, disagrees: raw !== null && (raw < b.lo - 1 || (a.do === "ignore" && b.lo >= BANDS.soon[0])),
     };
   });
   const best = ratings.reduce((m, r) => (r.score > m.score ? r : m), ratings[0]);

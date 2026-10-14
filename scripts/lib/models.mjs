@@ -59,8 +59,10 @@ function defaults(lines, name) {
   return lines.flatMap(({ line, text }) => { const a = aliasOf(text.match(re)?.[1] || ""); return a ? [{ a, line }] : []; });
 }
 
+const SITES = 5;
 // The models a project's files use, from use.mjs's split ([{file, used: [{line, text}], mentioned}]):
-// pinned ids and aliases from used lines only, each with the file and line it was first seen at;
+// pinned ids and aliases from used lines only, each with the file and line it was first seen at (and,
+// for ids, up to SITES call sites);
 // ids seen only in mentions (docs, data, comments) are listed apart and never count as use (B-47).
 // models: the pinned ids alone, the shape rate.mjs reads.
 export function modelUse(files) {
@@ -77,7 +79,12 @@ export function modelUse(files) {
         if (a) add(a, line);
         else if (/^[A-Za-z_$][\w$]*$/.test(m[1])) for (const d of defaults(f.used, m[1])) add(d.a, d.line);
       }
-      for (const m of ids(text)) if (!seen.has(m.id)) { seen.add(m.id); used.push({ id: m.id, file: f.file, line }); }
+      for (const m of ids(text)) {
+        if (!seen.has(m.id)) { seen.add(m.id); used.push({ id: m.id, file: f.file, line, sites: [] }); }
+        // Where else it is called, for the rater and the brief (B-37, NC 5): a few sites, not all.
+        const u = used.find((x) => x.id === m.id);
+        if (u.sites.length < SITES && !u.sites.some((s) => s.file === f.file && s.line === line)) u.sites.push({ file: f.file, line });
+      }
     }
     aliases.push(...here.sort((a, b) => a.line - b.line));
   }

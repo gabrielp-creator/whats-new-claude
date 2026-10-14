@@ -64,7 +64,7 @@ test("a record is not use (NC 1, LNC 2): ids in a review record are mentions, th
     { file: "src/a.ts", text: "import x from 'y';\nconst M = 'claude-opus-4-8';" },
   ]);
   assert.deepEqual(ix.models.models, ["claude-opus-4-8"]);
-  assert.deepEqual(ix.models.used, [{ id: "claude-opus-4-8", file: "src/a.ts", line: 2 }]);
+  assert.deepEqual(ix.models.used, [{ id: "claude-opus-4-8", file: "src/a.ts", line: 2, sites: [{ file: "src/a.ts", line: 2 }] }]);
   assert.deepEqual(ix.models.mentioned, ["claude-sonnet-4-6"]);
   assert.deepEqual(ix.models.aliases, []);
 });
@@ -75,7 +75,7 @@ test("a doc mention is not use (SU 3): setup's skill prose names an id, settings
     { file: "settings.json", text: '{\n  "model": "claude-opus-5-5"\n}' },
   ], { claudeRoot: true });
   assert.deepEqual(ix.models.models, ["claude-opus-5-5"]);
-  assert.deepEqual(ix.models.used, [{ id: "claude-opus-5-5", file: "settings.json", line: 2 }]);
+  assert.deepEqual(ix.models.used, [{ id: "claude-opus-5-5", file: "settings.json", line: 2, sites: [{ file: "settings.json", line: 2 }] }]);
   assert.deepEqual(ix.models.mentioned, ["claude-opus-4-8"]);
 });
 
@@ -211,4 +211,15 @@ test("a short flag passed to claude counts as its long form (-p is --print)", ()
   const ix = useIndex([caller]);
   assert.deepEqual(lookup(["--print"], ix).found, [{ term: "--print", file: "scripts/run-lens.mjs" }]);
   assert.deepEqual(lookup(["--print"], useIndex([{ file: "scripts/git.sh", text: "grep -p x" }])).found, [], "not near a claude call");
+});
+
+test("B-37 (NC 5): each pinned model keeps its call sites, up to five, first one first", () => {
+  const ix = useIndex([
+    { file: "src/a.ts", text: "const A = 'claude-opus-4-8';\nconst B = 'claude-opus-4-8';" },
+    { file: "src/b.ts", text: "call('claude-opus-4-8')" },
+    ...[1, 2, 3, 4].map((n) => ({ file: `src/c${n}.ts`, text: "x('claude-opus-4-8')" })),
+  ]);
+  const [u] = ix.models.used;
+  assert.deepEqual([u.file, u.line], ["src/a.ts", 1]);
+  assert.deepEqual(u.sites.map((s) => `${s.file}:${s.line}`), ["src/a.ts:1", "src/a.ts:2", "src/b.ts:1", "src/c1.ts:1", "src/c2.ts:1"]);
 });
