@@ -44,6 +44,9 @@
   `--continue` and `--resume`. In a project whose code calls `claude`, an absent flag counts as "not
   found" like any other name. `models.json` lists each project's `claudeCalls` with file and line.
   "Found in" now names a code file before a config file.
+- Setup's project descriptions read `package.json` and `pyproject.toml` up to two folders below each
+  project (skipping installed packages and dot folders), so a workspace that keeps its code in a
+  subfolder is described with its packages. Only the draft written by `/whats-new setup` changes.
 
 ## 0.3.0 (2026-10-13)
 - Ratings follow the Claude models each project uses. The file check now lists the model ids in each
