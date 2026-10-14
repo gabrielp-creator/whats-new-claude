@@ -57,6 +57,52 @@ export function sdkTies(row, profiles, { partial = new Set() } = {}) {
   return { add, drop };
 }
 
+// B-59: what a Claude Code item is about, from a closed list of the features the CLI profile can
+// switch off (lib/cli.mjs). "tools" covers the tools themselves and what runs on them: background
+// commands, subagents and agent teams.
+const FEATURES = {
+  tools: /\b(?:background (?:commands?|tasks?|shells?|Bash)|run_in_background|Bash tool|PowerShell tool|WebFetch|WebSearch|web (?:fetch|search) tool|TodoWrite|Task(?:Create|Get|Update|List)\b|tool search|sub-?agents?|(?:plugin|custom) agents?|agent teams?|join(?:s|ing)? teams?|teammates?)/i,
+  mcp: /\bMCP\b/,
+  hooks: /\bhooks?\b|\b(?:PreToolUse|PostToolUse|UserPromptSubmit|SessionStart|SessionEnd|SubagentStop|PreCompact)\b/,
+  skills: /\bskills?\b/i,
+  plugins: /\bplugins?\b/i,
+};
+export const subjectFeatures = (text) => new Set(Object.keys(FEATURES).filter((f) => FEATURES[f].test(String(text || ""))));
+// A feature joined by "and" or "or" with sessions, runs or turns in general ("non-interactive sessions
+// and subagents now continue"): the item is about those sessions too, so no feature profile rules it out.
+const SESSION = "(?:sessions?|runs?|turns?|calls?|requests?)";
+const FEATURE_WORD = "(?:sub-?agents?|teammates?|background|hooks?|skills?|plugins?|MCP)";
+const GENERAL = new RegExp(`\\b${SESSION}\\s*,?\\s+(?:and|or)\\s+(?:\\S+\\s+){0,2}${FEATURE_WORD}\\b|\\b${FEATURE_WORD}(?:\\s+servers?)?\\s*,?\\s+(?:and|or)\\s+(?:\\S+\\s+){0,2}${SESSION}\\b`, "i");
+
+// The panel's tripwire set (P-4, P-5): never dropped, never below soon.
+const SERIOUS = /security|break|deprecat|retir/;
+export const isTripwire = (row) => !row.fyiOnly && (["security", "breaking", "deprecation"].includes(row.risk)
+  || ["security", "breaking-or-deprecation"].includes(row.type) || (row.tripwires || []).some((t) => SERIOUS.test(t)));
+
+const cite = (where) => where.slice(0, 3).join(", ") + (where.length > 3 ? ` +${where.length - 3}` : "");
+
+// profiles: profile.json (cli per project); confirmed: projects whose own config or code holds the
+// item's terms (they keep the tie). {drop: [{project, reason: "cli-off", why}], hold: [{project,
+// why}], add: [{project: "setup", tiedBy: "setup", ids: []}]}. A project is dropped only when every
+// feature the item names is off in every scripted call (P-2); a tripwire item is held instead, with
+// the same line as a note. Either way the item reaches setup, where interactive sessions run (P-4).
+export function cliTies(row, profiles, { confirmed = new Set(), setup = "setup" } = {}) {
+  const none = { drop: [], hold: [], add: [] };
+  if (row.source !== "claude-code" || row.fyiOnly || !profiles) return none;
+  const text = `${row.title || ""} ${row.text || ""}`;
+  const feats = [...subjectFeatures(text)];
+  if (!feats.length || GENERAL.test(text)) return none;
+  const drop = [], hold = [];
+  for (const project of row.projects || []) {
+    const cli = profiles[project]?.cli;
+    if (project === setup || cli?.status !== "known" || !feats.every((f) => cli.off[f]) || confirmed.has(project)) continue;
+    const why = `scripted claude calls run with ${feats.join(", ")} off (${cite([...new Set(feats.flatMap((f) => cli.off[f]))])})`;
+    (isTripwire(row) ? hold : drop).push({ project, reason: "cli-off", why });
+  }
+  const add = (drop.length || hold.length) && profiles[setup] && !(row.projects || []).includes(setup) ? [{ project: setup, tiedBy: "setup", ids: [] }] : [];
+  return { drop, hold, add };
+}
+
 // Every code-made tie change for one item, in the order verify.mjs applies them.
 export function codeTies(row, { models, profiles, partial } = {}) {
   const sdk = sdkTies(row, profiles, { partial });

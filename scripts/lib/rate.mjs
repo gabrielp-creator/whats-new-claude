@@ -89,6 +89,8 @@ export function bounds(row, project, evs, models) {
     note = `applies when you move to ${list(refs.map((r) => r.id))}; this project uses ${list(uses)}`;
   }
   if (row.fyiOnly) hi = Math.min(hi, FYI_CAP);
+  // A tripwire item the project's scripted calls may not reach stays in band with code's line (P-4).
+  if (e?.held) note = note ? `${note}; ${e.held}` : e.held;
   return { lo: Math.min(lo, hi), hi, evidence, foundIn, mentionedIn, note };
 }
 

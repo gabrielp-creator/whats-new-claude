@@ -177,5 +177,5 @@ test("verify keeps a dropped tie in evidence.jsonl; loadRows removes the project
   assert.deepEqual(got.projects, ["agent"]);
   assert.deepEqual(got.dropped.map((d) => [d.project, d.reason]), [["app", "no-sdk-package"]]);
   assert.equal(got.ratings.some((x) => x.project === "app"), false, "the rater never sees a dropped tie");
-  assert.match(r.stdout, /1 by SDK package; 1 dropped/);
+  assert.match(r.stdout, /1 by SDK package, 0 moved to setup; 1 dropped \(1 no-sdk-package\)/);
 });

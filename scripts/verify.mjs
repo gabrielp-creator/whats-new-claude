@@ -23,7 +23,7 @@ import { releaseRuns, archiveFiles } from "./lib/archive.mjs";
 import { buildProfile, profileTerms, profileLookup } from "./lib/profile.mjs";
 import { cliProfile } from "./lib/cli.mjs";
 import { readVersion, versionFor } from "./lib/version.mjs";
-import { codeTies } from "./lib/ties.mjs";
+import { codeTies, cliTies } from "./lib/ties.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
@@ -79,46 +79,59 @@ for (const p of config.projects) {
 }
 
 // Ties first (M3, P-25): code adds the projects whose own models the item is about (B-48) or that
-// depend on the SDK it changes (B-58), and drops lens ties the project's own manifests rule out. The
-// lenses' "no effect" filter below applies to the lenses' ties only. Each code-made tie and each drop
-// gets an evidence row (tiedBy, dropped), so loadRows applies them without recomputing anything.
+// depend on the SDK it changes (B-58), drops lens ties the project's own manifests rule out, and moves
+// a Claude Code item to setup from a project whose scripted claude calls switch its subject off
+// (B-59; a tie the project's own code confirms stays). The lenses' "no effect" filter applies to the
+// lenses' ties only. Each code-made tie, drop and hold gets an evidence row (tiedBy, dropped, held),
+// so loadRows applies them without recomputing anything.
 const out = [];
-let confirmed = 0, mentioned = 0, notFound = 0;
+let confirmed = 0, mentioned = 0, notFound = 0, heldCount = 0;
 const added = {}, droppedBy = {};
+const blank = { checked: [], found: [], mentioned: [] };
 for (const r of rows) {
   const change = codeTies(r, { models, profiles, partial });
   const ties = new Map(change.add.map((t) => [t.project, t]));
   const dropped = new Map(change.drop.map((d) => [d.project, d]));
-  for (const t of change.add) added[t.tiedBy] = (added[t.tiedBy] || 0) + 1;
-  for (const d of change.drop) {
-    droppedBy[d.reason] = (droppedBy[d.reason] || 0) + 1;
-    out.push({ id: r.id, project: d.project, tiedBy: "lens", dropped: d.reason, why: d.why, checked: [], found: [], mentioned: [] });
-  }
-  const projects = [...(r.effect === "none" && !r.riskExposed ? [] : r.projects.filter((p) => !dropped.has(p))), ...ties.keys()];
+  const current = { ...r, projects: [...r.projects.filter((p) => !dropped.has(p)), ...ties.keys()] };
   const terms = extractTerms(`${r.title || ""} ${r.text || ""}`);
   const conds = profileTerms(`${r.title || ""} ${r.text || ""}`);
-  const tag = (proj) => (ties.has(proj) ? { tiedBy: ties.get(proj).tiedBy, ties: ties.get(proj).ids } : { tiedBy: "lens" });
-  if (!terms.length && !conds.length) {
-    for (const proj of ties.keys()) out.push({ id: r.id, project: proj, ...tag(proj), checked: [], found: [], mentioned: [] });
-    continue;
-  }
-  let any = false, named = false;
-  for (const proj of projects) {
+  // The file check for one project, or null when there is nothing to check it with.
+  const check = (proj) => {
     const ix = indexes.get(proj);
-    if (!ix) { if (ties.has(proj)) out.push({ id: r.id, project: proj, ...tag(proj), checked: [], found: [], mentioned: [] }); continue; }
+    if (!ix || (!terms.length && !conds.length)) return null;
     const { found: inFiles, mentioned: only } = lookup(terms, ix);
     // The profile reads settings files directly, so the file cap never hides its answer.
     const fromProfile = profileLookup(conds, profiles[proj]);
-    const found = [...inFiles, ...fromProfile.found];
-    if (found.length) any = true;
-    if (only.length) named = true;
-    out.push({ id: r.id, project: proj, ...tag(proj), checked: [...(inFiles.length || !partial.has(proj) ? terms : []), ...fromProfile.checked], found, mentioned: only });
+    return { checked: [...(inFiles.length || !partial.has(proj) ? terms : []), ...fromProfile.checked], found: [...inFiles, ...fromProfile.found], mentioned: only };
+  };
+  const first = cliTies(current, profiles);
+  const lensChecked = r.effect === "none" && !r.riskExposed ? [] : current.projects.filter((p) => !ties.has(p));
+  const results = new Map([...new Set([...lensChecked, ...ties.keys(), ...first.drop.map((d) => d.project), ...first.hold.map((d) => d.project), ...first.add.map((a) => a.project)])].map((p) => [p, check(p)]));
+  const cli = cliTies(current, profiles, { confirmed: new Set([...results].filter(([, x]) => x?.found.length).map(([p]) => p)) });
+  for (const a of cli.add) ties.set(a.project, a);
+  const cliDrop = new Map(cli.drop.map((d) => [d.project, d])), held = new Map(cli.hold.map((d) => [d.project, d]));
+  for (const t of ties.values()) added[t.tiedBy] = (added[t.tiedBy] || 0) + 1;
+  heldCount += held.size;
+  for (const d of [...change.drop, ...cliDrop.values()]) droppedBy[d.reason] = (droppedBy[d.reason] || 0) + 1;
+  for (const d of change.drop) out.push({ id: r.id, project: d.project, tiedBy: "lens", dropped: d.reason, why: d.why, ...blank });
+
+  const tag = (proj) => (ties.has(proj) ? { tiedBy: ties.get(proj).tiedBy, ties: ties.get(proj).ids } : { tiedBy: "lens" });
+  const kept = [];
+  for (const proj of [...lensChecked, ...ties.keys(), ...cliDrop.keys()].filter((p, i, a) => a.indexOf(p) === i)) {
+    const res = results.get(proj) ?? check(proj);
+    const d = cliDrop.get(proj), h = held.get(proj);
+    if (!res && !ties.has(proj) && !d && !h) continue;
+    out.push({ id: r.id, project: proj, ...tag(proj), ...(d ? { dropped: d.reason, why: d.why } : {}), ...(h ? { held: h.why } : {}), ...(res || blank) });
+    if (!d && res) kept.push([proj, res]);
   }
-  if (any) confirmed++; else if (named) mentioned++; else if (projects.some((p) => indexes.has(p))) notFound++;
+  if (!terms.length && !conds.length) continue;
+  if (kept.some(([, x]) => x.found.length)) confirmed++;
+  else if (kept.some(([, x]) => x.mentioned.length)) mentioned++;
+  else if (kept.length) notFound++;
 }
 writeJsonl(join(DATA, "evidence.jsonl"), out);
 writeJson(join(DATA, "models.json"), models);
 writeJson(join(DATA, "profile.json"), profiles);
 const drops = Object.values(droppedBy).reduce((a, b) => a + b, 0);
-console.log(`ties: ${added.model || 0} added by model, ${added.sdk || 0} by SDK package; ${drops} dropped${drops ? ` (${Object.entries(droppedBy).map(([k, n]) => `${n} ${k}`).join(", ")})` : ""}; dropped ties are kept for the "Not used here" list`);
+console.log(`ties: ${added.model || 0} added by model, ${added.sdk || 0} by SDK package, ${added.setup || 0} moved to setup; ${drops} dropped${drops ? ` (${Object.entries(droppedBy).map(([k, n]) => `${n} ${k}`).join(", ")})` : ""}, kept for the "Not used here" list; ${heldCount} security, breaking or deprecation item(s) kept with a note`);
 console.log(`evidence: ${confirmed} item(s) confirmed in your config or code, ${mentioned} only mentioned (docs, data, comments), ${notFound} checked and not found`);
