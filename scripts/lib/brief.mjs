@@ -90,6 +90,15 @@ const stateFor = (i, r) => r?.state || (i.urgencyLabel === "urgent" || i.urgency
 // In an event the announcement is quoted first: launches, then by source.
 const LEAD_SOURCE = { "platform-release-notes": 0, "anthropic-news": 1, "claude-code": 2, skills: 3 };
 
+// B-38: the items picked for a project bring the rest of their events, so an entry has every source's
+// link; each takes its next step from its own rating for the project. Shared by write-briefs.mjs and
+// the page. A member pulled in this way is marked `sibling` (R-2).
+export function withEvents(project, chosen, all) {
+  const ids = new Set(chosen.map((i) => i.id)), events = new Set(chosen.map((i) => i.event).filter(Boolean));
+  const pulled = all.filter((i) => i.event && events.has(i.event) && !ids.has(i.id)).map((i) => ({ ...i, sibling: true }));
+  return [...chosen, ...pulled].map((i) => ({ ...i, action: ratingFor(i, project)?.do || i.action }));
+}
+
 // B-38: the items of one event (row.event, from rows.mjs) make one entry; any other item is its own.
 // The entry takes its members' first state for this project (PRIORITY), and the rating and next step
 // that gave it (actor); the announcement leads what is shown (lead).
@@ -98,8 +107,11 @@ export function briefEntries(project, items) {
   for (const i of items) { const k = i.event || `item:${i.id}`; if (!by.has(k)) by.set(k, []); by.get(k).push(i); }
   return [...by.values()].map((members) => {
     const rated = members.map((i) => ({ i, r: ratingFor(i, project) }));
-    const states = [...new Set(rated.map(({ i, r }) => stateFor(i, r)))].sort((a, b) => PRIORITY[a] - PRIORITY[b]);
-    const deciding = rated.filter(({ i, r }) => stateFor(i, r) === states[0]).sort((a, b) => (b.r?.score ?? 0) - (a.r?.score ?? 0))[0];
+    // A sibling with no rating here adds its link and quote, never the state or the prompt (R-2).
+    const voting = rated.filter(({ i, r }) => r || !i.sibling);
+    const from = voting.length ? voting : rated;
+    const states = [...new Set(from.map(({ i, r }) => stateFor(i, r)))].sort((a, b) => PRIORITY[a] - PRIORITY[b]);
+    const deciding = from.filter(({ i, r }) => stateFor(i, r) === states[0]).sort((a, b) => (b.r?.score ?? 0) - (a.r?.score ?? 0))[0];
     const ordered = rated.slice().sort((a, b) => (a.i.type === "model" ? 0 : 1) - (b.i.type === "model" ? 0 : 1)
       || (LEAD_SOURCE[a.i.source] ?? 9) - (LEAD_SOURCE[b.i.source] ?? 9)).map((x) => x.i);
     return { state: states[0], states, rating: deciding.r, actor: deciding.i, lead: ordered[0], members: ordered };

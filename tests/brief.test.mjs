@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildBrief, briefFileName, actionStep } from "../scripts/lib/brief.mjs";
+import { buildBrief, briefFileName, actionStep, withEvents } from "../scripts/lib/brief.mjs";
 
 const it = (o = {}) => ({
   id: "claude-code:v2.1.290:92", source: "claude-code", date: "2026-10-05", url: "https://github.com/anthropics/claude-code/releases/tag/v2.1.290",
@@ -226,6 +226,26 @@ test("B-38: an event that is not used here is one appendix line, not three entri
     ...["p:1", "c:1", "s:1"].map((id) => entry(id, "not-used", { ...ev, type: "model", text: `Launch ${id}.` }, { evidence: "other-models", note: "this project uses claude-opus-4-8" })),
   ], opts);
   assert.equal((md.slice(md.indexOf("## Appendix")).match(/^- /gm) || []).length, 1);
+});
+
+// R-2 (release review): a member pulled in only because it is in the picked item's event, with no
+// rating for this project, brings its link and quote but never sets the entry's state or prompt.
+test("B-38: an event member not rated for the project never decides the entry (RF 7, R-2)", () => {
+  const ev = { event: "launch:claude-haiku-5-5:2026-10-07", type: "model" };
+  const own = entry("p:1", "not-used", { ...ev, text: "Launch p." }, { evidence: "other-models", note: "this project uses claude-opus-4-8" });
+  const untied = it({ ...ev, id: "c:1", source: "claude-code", urgencyLabel: "urgent", text: "Launch c.", projects: ["other"], ratings: [] });
+  const items = withEvents("app", [own], [own, untied, it({ id: "x:9", event: "launch:other:2026-01-01" })]);
+  assert.deepEqual(items.map((i) => [i.id, Boolean(i.sibling)]), [["p:1", false], ["c:1", true]]);
+  assert.equal(buildBrief("app", items, opts), "", "only an appendix line: no brief");
+  // control: the same item picked for the project itself still decides by its urgency
+  assert.match(buildBrief("app", [own, untied], opts), /^## Act now$/m);
+});
+
+test("B-38: withEvents takes each member's next step from its own rating for the project", () => {
+  const ev = { event: "launch:claude-sonnet-5-5:2026-09-28" };
+  const a = entry("p:1", "act", { ...ev, action: "read" }, { do: "model-refresh" });
+  const b = entry("c:1", "act", { ...ev, action: "read" }, { do: "update-harness" });
+  assert.deepEqual(withEvents("app", [a], [a, b]).map((i) => i.action), ["model-refresh", "update-harness"]);
 });
 
 test("B-42: confirm prompts name code's facts and ask to confirm, never to change (RF 6); an alias prompt names the alias", () => {

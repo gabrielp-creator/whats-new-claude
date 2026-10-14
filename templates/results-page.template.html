@@ -415,9 +415,7 @@ $("open-briefs").addEventListener("click", () => { state.view = state.view === "
 // As write-briefs.mjs: the project's next step from its rating, and a picked item's whole event (B-38).
 function briefItems(project) {
   const chosen = [...picks].filter(([, ps]) => ps.includes(project)).map(([id]) => byId.get(id)).filter(Boolean);
-  const events = new Set(chosen.map((i) => i.event).filter(Boolean));
-  const all = [...chosen, ...items.filter((i) => i.event && events.has(i.event) && !chosen.includes(i))];
-  return all.map((i) => ({ ...i, action: i.ratings.find((r) => r.project === project)?.do || i.action, plain: plain.get(i.id) || "" }));
+  return withEvents(project, chosen, items).map((i) => ({ ...i, plain: plain.get(i.id) || "" }));
 }
 function renderBriefs() {
   const list = $("list"); list.replaceChildren();

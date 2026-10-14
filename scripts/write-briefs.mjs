@@ -13,7 +13,7 @@ import { join, relative, sep } from "node:path";
 import { dataDir } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
-import { buildBrief, briefFileName } from "./lib/brief.mjs";
+import { buildBrief, briefFileName, withEvents } from "./lib/brief.mjs";
 import { safeBriefDir, inProjectScope, recheckCreated } from "./lib/paths.mjs";
 import { exportPicks } from "./lib/show.mjs";
 import { parseCommand } from "./lib/args.mjs";
@@ -60,12 +60,7 @@ for (const p of exp.picks || []) {
 }
 if (!byProject.size) throw new Error("no saved picks with a known project; nothing to write");
 // B-38: a picked item brings the rest of its event, so the brief's one entry has every source's link.
-for (const items of byProject.values()) {
-  for (const it of [...items]) {
-    if (!it.event) continue;
-    for (const r of allRows) if (r.event === it.event && !items.some((x) => x.id === r.id)) items.push({ ...r, action: r.action });
-  }
-}
+for (const [proj, items] of byProject) byProject.set(proj, withEvents(proj, items, allRows));
 
 for (const [proj, items] of byProject) {
   const project = projects.get(proj);
