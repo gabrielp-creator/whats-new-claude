@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-10-14)
 - Fix: provenance. A plugin in the official marketplace counts as Anthropic-published only from its
   `./plugins` folder or an `anthropics` repo on github.com; before, any `./` path counted, including
   `./external_plugins` (14 of 315 entries on 2026-10-13), and a URL merely containing
