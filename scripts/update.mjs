@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { readJson, writeJson, dataDir } from "./lib/store.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { optionsFromEnv, mergeOptions } from "./lib/options.mjs";
-import { isDue, budgetDecision, stepOutcome, remainingBudget, stepEnv } from "./lib/updater.mjs";
+import { isDue, budgetDecision, stepOutcome, remainingBudget, stepEnv, offlineRun } from "./lib/updater.mjs";
 import { takeLock, refreshLock, releaseLock } from "./lib/lock.mjs";
 
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
@@ -40,16 +40,21 @@ function main() {
   const config = mergeOptions(loadConfig(DATA), optionsFromEnv(process.env));
   if (!isDue(readJson(join(DATA, "updater.json"), null), config.updateFrequency)) return;
   if (!takeLock(DATA, "background update")) return;
-  const record = { lastAttempt: new Date().toISOString(), finishedAt: null, running: true, failed: [], waiting: null, incomplete: false, errors: [] };
+  const record = { lastAttempt: new Date().toISOString(), finishedAt: null, running: true, failed: [], offline: false, waiting: null, incomplete: false, errors: [] };
   // Recorded before the first step: if this process is killed, the reminder can still tell (lib/reminder.mjs).
   writeJson(join(DATA, "updater.json"), record);
   const must = (name, r) => { if (!r.ok) { record.incomplete = true; record.errors.push(`${name}: ${r.error}`); } return r.ok; };
   try {
     const fetch = step("fetch.mjs");
     // A failed source exits 1 but saves the rest, and state.json names it. Anything else is a crash.
-    record.failed = Object.entries(readJson(join(DATA, "state.json"), {}).sources || {}).filter(([, s]) => s.lastError).map(([k]) => k);
+    const state = readJson(join(DATA, "state.json"), {});
+    record.failed = Object.entries(state.sources || {}).filter(([, s]) => s.lastError).map(([k]) => k);
+    // No network at all (B-69): nothing new to work on; the next session tries again (isDue).
+    if (offlineRun(state, record.lastAttempt)) { record.offline = true; return; }
     if (!fetch.ok && !record.failed.length) must("fetch", fetch);
     if (!must("enrich-commits", step("enrich-commits.mjs"))) return;
+    // The plan's rating figure reads the evidence, so the file check runs first (B-70).
+    must("verify", step("verify.mjs"));
     const planStep = step("plan.mjs");
     if (!must("plan", planStep)) return;
     const plan = JSON.parse(planStep.out);
@@ -59,8 +64,8 @@ function main() {
       const lens = step("lens-run.mjs", { WNC_MAX_CALLS: String(left) });
       left = remainingBudget(left, lens);
       must("lens-run", lens);
+      must("verify", step("verify.mjs")); // the items the lenses just tied
     }
-    must("verify", step("verify.mjs"));
     if (decision.run && left > 0) must("rate-run", step("rate-run.mjs", { WNC_MAX_CALLS: String(left) }));
     if (decision.waiting) record.waiting = { items: Math.max(plan.itemsNeedingReview || 0, plan.itemsToRate || 0), calls: plan.calls, redo: plan.itemsToRedo || 0 };
     must("build-page", step("build-page.mjs"));

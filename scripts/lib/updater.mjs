@@ -8,11 +8,24 @@ import { FREQUENCY_HOURS } from "./options.mjs";
 // still expires, so it cannot block updates for good.
 export const LOCK_STALE_MS = 4 * 36e5;
 
+// An attempt that found no network (offlineRun) does not count, so the next session tries again.
 export function isDue(updater, frequency, now = Date.now()) {
   const hours = Object.hasOwn(FREQUENCY_HOURS, frequency) ? FREQUENCY_HOURS[frequency] : FREQUENCY_HOURS.daily;
   if (hours === Infinity) return false;
+  if (updater?.offline) return true;
   const last = Date.parse(updater?.lastAttempt || "");
   return !Number.isFinite(last) || now - last >= hours * 36e5;
+}
+
+// B-69: after fetch, state.json shows a run that never reached the network: some source failed, every
+// failure is lib/net.mjs's "network unreachable", and no source succeeded since the run started.
+const NO_NETWORK = /^network unreachable \(/;
+export function offlineRun(state, startedAt) {
+  const sources = Object.values(state?.sources || {});
+  const failed = sources.filter((s) => s?.lastError);
+  const start = Date.parse(startedAt);
+  return failed.length > 0 && failed.every((s) => NO_NETWORK.test(s.lastError))
+    && !sources.some((s) => Date.parse(s?.lastSuccess || "") >= start);
 }
 
 // lock: the parsed lock file, or null when there is none or it could not be read; mtimeMs: the lock

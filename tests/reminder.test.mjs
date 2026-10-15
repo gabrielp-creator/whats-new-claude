@@ -109,3 +109,10 @@ test("B-65 (P-20): re-rates are never called new; the explanation shows once, th
   assert.match(later, /30 items rated before 0\.3\.1 are waiting for \/whats-new \(about 3 Claude calls/);
   assert.doesNotMatch(later, /new items|changed how ratings are bounded/);
 });
+
+test("a background update that found no network says that, not a list of failed sources (B-69)", () => {
+  const sources = ["claude-code", "agent-sdk-ts", "agent-sdk-py", "platform-release-notes", "anthropic-site", "skills", "cookbooks", "plugins"];
+  const t = reminderText({ summary: sum({ top: {}, topTotal: 0 }), config: cfg, updater: { failed: sources, offline: true, finishedAt: "2026-10-08T08:00:00Z" } }, NOW);
+  assert.match(t, /Background update: no network when the session started; the next session tries again\./);
+  assert.doesNotMatch(t, /sources? failed/);
+});

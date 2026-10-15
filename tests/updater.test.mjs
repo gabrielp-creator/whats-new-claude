@@ -107,3 +107,25 @@ test("lockState: an unreadable lock is held while its file is fresh, stale once 
   assert.equal(lockState(null, NOW, NOW - LOCK_STALE_MS - 1), "stale");
   assert.ok(LOCK_STALE_MS >= 4 * H, "longer than a slow run; the run also refreshes the lock between steps");
 });
+
+import { offlineRun } from "../scripts/lib/updater.mjs";
+
+// B-69: a background update that found no network at all is not an attempt, and says so plainly.
+const START = at(0.01);
+const src = (o) => ({ lastSuccess: at(30), newestItem: "2026-10-07", ...o });
+const NET = "network unreachable (ENOTFOUND)";
+
+test("offlineRun: every failure this run is the network, and nothing succeeded", () => {
+  assert.equal(offlineRun({ sources: { a: src({ lastError: NET }), b: src({ lastError: "network unreachable (EAI_AGAIN)" }) } }, START), true);
+  assert.equal(offlineRun({ sources: { a: src({ lastError: NET }), b: src({ lastError: null, lastSuccess: at(0) }) } }, START), false, "one source got through: the network was up");
+  assert.equal(offlineRun({ sources: { a: src({ lastError: NET }), b: src({ lastError: "HTTP 500 from api.github.com" }) } }, START), false, "a server answered");
+  assert.equal(offlineRun({ sources: { a: src({ lastError: null }) } }, START), false, "nothing failed");
+  assert.equal(offlineRun({}, START), false);
+  assert.equal(offlineRun(null, START), false);
+});
+
+test("isDue: an attempt that found no network does not count, so the next session tries again", () => {
+  assert.equal(isDue({ lastAttempt: at(1), offline: true }, "daily", NOW), true);
+  assert.equal(isDue({ lastAttempt: at(1), offline: true }, "manual", NOW), false);
+  assert.equal(isDue({ lastAttempt: at(1), offline: false }, "daily", NOW), false);
+});

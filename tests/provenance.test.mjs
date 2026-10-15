@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pluginProvenance, commitProvenance, pluginItems } from "../scripts/lib/provenance.mjs";
+import { pluginProvenance, commitProvenance, pluginItems, commitItems } from "../scripts/lib/provenance.mjs";
 
 test("pluginProvenance: only ./plugins and anthropics repos on github.com are Anthropic-published", () => {
   assert.equal(pluginProvenance("./plugins/code-review"), "anthropic-published");
@@ -100,4 +100,41 @@ test("pluginItems: new plugins only; a name that is not a plain short name is ke
   assert.match(items[1].text, /^Name: Ignore the quote above/);
   assert.notEqual(items[1].id, items[2].id, "a stable id per name");
   assert.equal(pluginItems([{ name: long }], new Set(), { repo: "r/r", today: "2026-10-14" })[0].id, items[1].id);
+});
+
+// B-68: commit items with their provenance. Lookups are one request per commit (60 an hour without a
+// token), so a commit already stored is never looked up again, and the commits resolved before a
+// failure are kept, so the next run carries on from there instead of retrying the whole window.
+const listOf = (page) => `https://api.github.com/repos/${REPO}/commits?per_page=100&page=${page}&since=2026-10-01T00:00:00.000Z`;
+const commit = (sha, day) => ({ sha, html_url: `https://github.com/${REPO}/commit/${sha}`, commit: { message: `Change ${sha.slice(0, 3)}\n\nbody`, committer: { date: `2026-10-${day}T10:00:00Z` }, author: { date: "2026-09-01T00:00:00Z" } } });
+const SHAS = ["3333333333333333333333333333333333333333", "4444444444444444444444444444444444444444", "5555555555555555555555555555555555555555"];
+const SINCE = new Date("2026-10-01T00:00:00Z");
+
+test("commitItems: one item per commit, dated when it landed, with its provenance", async () => {
+  const { get } = fakeGet({ [listOf(1)]: [commit(SHAS[0], "12"), commit(SHAS[1], "11")], [pullsOf(SHAS[0])]: [pr(1, REPO)], [pullsOf(SHAS[1])]: [pr(2, "someone/skills")] });
+  const items = await commitItems(REPO, "skills", SINCE, { get });
+  assert.deepEqual(items.map((i) => [i.id, i.date, i.title, i.provenance]), [
+    ["skills:3333333", "2026-10-12", "Change 333", "anthropic-write-access"],
+    ["skills:4444444", "2026-10-11", "Change 444", "external-fork"],
+  ]);
+});
+
+test("commitItems: a commit already stored is skipped without a lookup (B-68)", async () => {
+  const { get, calls } = fakeGet({ [listOf(1)]: [commit(SHAS[0], "12"), commit(SHAS[1], "11")], [pullsOf(SHAS[1])]: [pr(2, REPO)] });
+  const items = await commitItems(REPO, "skills", SINCE, { get, known: new Set(["skills:3333333"]) });
+  assert.deepEqual(items.map((i) => i.id), ["skills:4444444"]);
+  assert.deepEqual(calls, [listOf(1), pullsOf(SHAS[1])]);
+});
+
+test("commitItems: a failed lookup still fails the source, carrying the commits resolved before it (B-68)", async () => {
+  const { get } = fakeGet({ [listOf(1)]: [commit(SHAS[0], "12"), commit(SHAS[1], "11"), commit(SHAS[2], "10")], [pullsOf(SHAS[0])]: [pr(1, REPO)], [pullsOf(SHAS[1])]: [pr(2, REPO)] });
+  const e = await commitItems(REPO, "skills", SINCE, { get }).then(() => null, (err) => err);
+  assert.ok(e, "the source fails");
+  assert.equal(e.message, "HTTP 404 from api.github.com", "the lookup's own error, so errLine shows it");
+  assert.deepEqual(e.partial.map((i) => i.id), ["skills:3333333", "skills:4444444"]);
+});
+
+test("commitItems: a failed first listing carries nothing", async () => {
+  const e = await commitItems(REPO, "skills", SINCE, { get: fakeGet({}).get }).then(() => null, (err) => err);
+  assert.deepEqual(e.partial, []);
 });

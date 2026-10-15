@@ -126,8 +126,12 @@ change.
 - **"This folder is not one of your configured projects."** `here` matches your working folder to the
   project folders from setup. Use `--project <id>`, or rerun `/whats-new setup` to add the folder.
 - **A source FAILED.** It is retried on the next run and named in the reminder until it works. GitHub
-  rate limits are the usual cause for frequent background updates; add a read-only GitHub token in
-  `/config`.
+  rate limits are the usual cause for frequent background updates ("GitHub rate limit reached"); add a
+  read-only GitHub token in `/config`. Commits fetched before the limit was reached are kept, so each
+  retry goes on from there.
+- **"network unreachable" or "no network when the session started".** The request never reached the
+  server (the code in brackets says why, such as `ENOTFOUND`). A background update that found no
+  network at all does not count as an update, so the next session tries again.
 - **"busy: a background update is running".** Wait a few minutes; only one update runs at a time.
 - **Items show a "provisional" rating.** They have not been rated by the reviewer yet (over your
   budget, or a call failed); the next `/whats-new` rates them. Details of failed calls are in
