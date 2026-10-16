@@ -1,8 +1,9 @@
 # Privacy policy: What's New for Claude
 
-Effective 2026-10-08. Applies to the Claude Code plugin `whats-new-claude`. Changed in version 0.3.1:
-the plugin now reads `settings.local.json` for the fixed set of facts listed under "Your Claude Code
-settings" below; before, it never opened that file.
+Effective 2026-10-08. Applies to the Claude Code plugin `whats-new-claude`. Changed in version 0.3.2:
+it also keeps `failing.json` in its data folder (see below). Changed in version 0.3.1: the plugin
+now reads `settings.local.json` for the fixed set of facts listed under "Your Claude Code settings"
+below; before, it never opened that file.
 
 The plugin has no server of its own. It runs on your computer, inside Claude Code, and its developer
 receives nothing from it: no analytics, no telemetry, no accounts.
