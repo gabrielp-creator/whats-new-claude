@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { homedir } from "node:os";
 import { dataDir, positional, readJsonl, readJson, writeJsonl, writeJson } from "./lib/store.mjs";
 import { sinceFor, mergeItems, recordSource, heartbeatWarnings, clampDate } from "./lib/incremental.mjs";
-import { pluginItems, commitProvenance } from "./lib/provenance.mjs";
+import { pluginItems, commitItems } from "./lib/provenance.mjs";
 import { safeUrl } from "./lib/brief.mjs";
 import { get, errLine } from "./lib/net.mjs";
 import { refreshDeprecations } from "./lib/deprecations.mjs";
@@ -96,21 +96,6 @@ async function pluginMarketplace(since) {
   return pluginItems(await load(), before, { repo, today: new Date().toISOString().slice(0, 10) });
 }
 
-async function githubCommits(repo, source, since) {
-  const items = [];
-  for (let page = 1; page <= 5; page++) {
-    const commits = await get(`https://api.github.com/repos/${repo}/commits?per_page=100&page=${page}&since=${since.toISOString()}`, { json: true });
-    for (const c of commits) items.push({
-      // when it landed (committer), not the author's own date, which a rebase keeps and anyone can set
-      id: `${source}:${c.sha.slice(0, 7)}`, source, date: (c.commit.committer?.date || c.commit.author.date).slice(0, 10),
-      title: c.commit.message.split("\n")[0].slice(0, 200), text: "", url: c.html_url,
-      provenance: await commitProvenance(repo, { sha: c.sha, message: c.commit.message }, get),
-    });
-    if (commits.length < 100) break;
-  }
-  return items;
-}
-
 // ---- tripwires: always surface, whatever the lenses later decide -------------
 
 function setupTerms() {
@@ -150,8 +135,9 @@ const SOURCES = {
   "agent-sdk-py": (s) => githubReleases("anthropics/claude-agent-sdk-python", "agent-sdk-py", s),
   "platform-release-notes": platformReleaseNotes,
   "anthropic-site": anthropicSite,
-  skills: (s) => githubCommits("anthropics/skills", "skills", s),
-  cookbooks: (s) => githubCommits("anthropics/claude-cookbooks", "cookbooks", s),
+  // Commits already stored are not looked up again (B-68).
+  skills: (s) => commitItems("anthropics/skills", "skills", s, { get, known: storedIds() }),
+  cookbooks: (s) => commitItems("anthropics/claude-cookbooks", "cookbooks", s, { get, known: storedIds() }),
   plugins: pluginMarketplace,
 };
 
@@ -159,28 +145,37 @@ const itemsPath = join(DATA, "items.jsonl");
 const statePath = join(DATA, "state.json");
 let state = readJson(statePath, { sources: {} });
 let store = readJsonl(itemsPath);
+const storedIds = () => new Set(store.map((i) => i.id));
 const terms = setupTerms();
 const lines = [];
 let failed = 0, addedTotal = 0;
+// Cleans fetched items and adds the new ones to the store; returns how many were new.
+function keep(fresh) {
+  for (const it of fresh) {
+    it.url = safeUrl(it.url); // links are fetched data: https on the source hosts only
+    it.date = clampDate(it.date); // so is the date: never in the future
+    it.text = String(it.text || "").slice(0, TEXT_MAX);
+    it.tripwires = tripwireHits(it, terms);
+  }
+  const { items, added } = mergeItems(store, fresh);
+  store = items; addedTotal += added.length;
+  return added.length;
+}
 for (const [name, job] of Object.entries(SOURCES)) {
   const since = sinceFor(state, name, Number(FIRST_DAYS));
   try {
     const fresh = await job(since);
-    for (const it of fresh) {
-      it.url = safeUrl(it.url); // links are fetched data: https on the source hosts only
-      it.date = clampDate(it.date); // so is the date: never in the future
-      it.text = String(it.text || "").slice(0, TEXT_MAX);
-      it.tripwires = tripwireHits(it, terms);
-    }
-    const { items, added } = mergeItems(store, fresh);
-    store = items; addedTotal += added.length;
+    const added = keep(fresh);
     const newest = fresh.map((i) => i.date).filter(Boolean).sort().at(-1);
     state = recordSource(state, name, { ok: true, newestDate: newest });
-    lines.push(`${name}: ${added.length} new (since ${since.toISOString().slice(0, 10)})`);
+    lines.push(`${name}: ${added} new (since ${since.toISOString().slice(0, 10)})`);
   } catch (e) {
     failed++;
+    // Items a source resolved before it failed are kept; its window is not advanced, so the next
+    // run reads it again and skips what is stored (B-68).
+    const kept = Array.isArray(e?.partial) ? keep(e.partial) : 0;
     state = recordSource(state, name, { ok: false, error: errLine(e) });
-    lines.push(`${name}: FAILED: ${errLine(e)}`);
+    lines.push(`${name}: FAILED: ${errLine(e)}${kept ? `; kept ${kept} new, the next run goes on from there` : ""}`);
   }
 }
 // B-4: the deprecations page's model status table, a snapshot for the retirement check, not items.

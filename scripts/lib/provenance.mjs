@@ -49,3 +49,30 @@ export async function commitProvenance(repo, { sha }, get) {
   if (!Array.isArray(prs)) throw new Error("unexpected answer for a commit's pull requests");
   return prs.every((p) => p?.head?.repo?.full_name === repo) ? "anthropic-write-access" : "external-fork";
 }
+
+// A repo's commits since a date as items, newest first, each with its provenance (one lookup per
+// commit, B-68). known: the item ids already stored, which are skipped without a lookup (the store
+// keeps the first copy anyway). A failure still fails the source, but carries the items resolved
+// before it as e.partial, so they are kept and the next run goes on from there.
+export async function commitItems(repo, source, since, { get, known = new Set() }) {
+  const items = [];
+  try {
+    for (let page = 1; page <= 5; page++) {
+      const commits = await get(`https://api.github.com/repos/${repo}/commits?per_page=100&page=${page}&since=${since.toISOString()}`, { json: true });
+      for (const c of commits) {
+        const id = `${source}:${c.sha.slice(0, 7)}`;
+        if (known.has(id)) continue;
+        items.push({
+          // when it landed (committer), not the author's own date, which a rebase keeps and anyone can set
+          id, source, date: (c.commit.committer?.date || c.commit.author.date).slice(0, 10),
+          title: c.commit.message.split("\n")[0].slice(0, 200), text: "", url: c.html_url,
+          provenance: await commitProvenance(repo, { sha: c.sha, message: c.commit.message }, get),
+        });
+      }
+      if (commits.length < 100) break;
+    }
+  } catch (e) {
+    throw Object.assign(e instanceof Error ? e : new Error(String(e)), { partial: items });
+  }
+  return items;
+}

@@ -30,7 +30,9 @@ export function reminderText({ summary, config, project, updater, options, notic
   // A later /whats-new run rebuilt the results after this background update: its warnings are old.
   if (updater?.finishedAt && Date.parse(summary.builtAt) > Date.parse(updater.finishedAt)) updater = null;
   const failed = (updater?.failed || []).filter((s) => ID.test(s));
-  if (failed.length) parts.push(`Background update: ${plural(failed.length, "source")} failed (${failed.join(", ")}).`);
+  // B-69: a run that never reached the network says that once, not one failure per source.
+  if (updater?.offline) parts.push("Background update: no network when the session started; the next session tries again.");
+  else if (failed.length) parts.push(`Background update: ${plural(failed.length, "source")} failed (${failed.join(", ")}).`);
   // A run that was killed never writes its finish; once it is older than any real run, say so.
   const dead = updater?.running && !updater.finishedAt && now - Date.parse(updater.lastAttempt) > LOCK_STALE_MS;
   if (updater?.incomplete || dead) parts.push("The last background update did not finish; run /whats-new to see why.");

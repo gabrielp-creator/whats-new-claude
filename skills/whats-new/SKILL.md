@@ -80,24 +80,29 @@ If the output says the results are old, offer **Update now**.
    and name any sources that FAILED or have WARNINGS (source names only; do not repeat the rest of
    those lines, which can contain fetched text).
 5. `run enrich-commits`.
-6. `run plan`. If `askFirst` is true, ask the user whether to run `calls` Claude calls (`lensCalls` to
+6. `run verify`. It looks up the names in each flagged item (settings keys, model ids, packages,
+   env vars, hook names) in the user's own project files and `~/.claude` config, locally, and
+   reports how many items were confirmed. It runs before `plan` because what it finds decides which
+   ratings are redone, so the cost question counts the calls that will really run.
+7. `run plan`. If `askFirst` is true, ask the user whether to run `calls` Claude calls (`lensCalls` to
    review `itemsNeedingReview` items, `rateCalls` to rate about `itemsToRate`; they run on the user's own
    Claude account), and stop if they decline. When `itemsToRedo` is above 0, say in that same question
    that this many of the items to rate were rated before 0.3.1 and are rated again; never call them
    new, and never ask about them separately. The approved number is `calls` (when `askFirst` is false,
-   it is approved by their limit). If `calls` is 0, skip to step 8.
-7. `run lens-run --max-calls <calls + 3>`. The cap is enforced in code; the 3 covers retries. It
+   it is approved by their limit). If `calls` is 0, skip to step 10.
+8. `run lens-run --max-calls <calls + 3>`. The cap is enforced in code; the 3 covers retries. It
    prints `Claude calls used: N`. If it reports failures, say how many and that the next run retries.
-8. `run verify`. It looks up the names in each flagged item (settings keys, model ids, packages,
-   env vars, hook names) in the user's own project files and `~/.claude` config, locally, and
-   reports how many items were confirmed.
-9. `run rate-run --max-calls <calls + 3 - N>` (N from step 7; 0 if step 7 was skipped and `calls` is
+   If it reports items skipped after failing 3 runs in a row, say how many and that a new plugin
+   version or model tries them again.
+9. `run verify` again, for the items the lenses just reviewed.
+10. `run rate-run --max-calls <calls + 3 - N>` (N from step 8; 0 if step 8 was skipped and `calls` is
    0). It gives urgent and soon items an overall 0 to 10 rating per project, inside limits set by
-   code; any it could not rate keep a provisional score and are retried next run.
-10. Do **page**, then `run lock release`.
-11. `run show here`, and show its output as it is (if the working directory is not a configured
+   code; any it could not rate keep a provisional score and are retried next run, except those it
+   reports skipped after failing 3 runs in a row (say how many, as in step 8).
+11. Do **page**, then `run lock release`.
+12. `run show here`, and show its output as it is (if the working directory is not a configured
    project, it says so; that is fine).
-12. Reply briefly: the page link, any failed sources, the Claude calls used, and the next steps:
+13. Reply briefly: the page link, any failed sources, the Claude calls used, and the next steps:
    `/whats-new export` writes briefs for the top picks; `/whats-new here --min 7` widens the list;
    the page has the full expert view. A short reminder (counts and the link only) appears at session
    start; it can be turned off in `/config`.

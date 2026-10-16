@@ -5,7 +5,8 @@
 // Usage: node build-page.mjs [--data <dir>]
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, PLUGIN_ROOT, writeJson, readJson, readJsonl } from "./lib/store.mjs";
+import { dataDir, PLUGIN_ROOT, PLUGIN_VERSION, writeJson, readJson, readJsonl } from "./lib/store.mjs";
+import { FAILING_FILE, GIVE_UP_RUNS, skippedItems } from "./lib/failing.mjs";
 import { STALE_DAYS } from "./lib/reminder.mjs";
 import { loadConfig } from "./lib/config.mjs";
 import { loadRows } from "./lib/rows.mjs";
@@ -14,13 +15,21 @@ import { counters, jumps } from "./lib/counters.mjs";
 
 const DATA = dataDir();
 const config = loadConfig(DATA);
-const { rows, missing } = loadRows(DATA);
+const { items, rows } = loadRows(DATA);
+// B-9: items whose answer failed 3 runs in a row wait for a new plugin version or model, so they are
+// said apart from the ones the next /whats-new finishes.
+const shown = new Set(rows.map((r) => r.id));
+const unreviewed = items.filter((i) => !shown.has(i.id));
+const skipped = skippedItems(readJson(join(DATA, FAILING_FILE), {}), { version: PLUGIN_VERSION, model: config.model },
+  { unreviewed, toRate: rows.filter((r) => r.toRate) });
+const missing = unreviewed.filter((i) => !skipped.has(i.id)).length;
 const dates = rows.map((i) => i.date).filter(Boolean).sort();
 const data = {
   total: rows.length, from: dates[0] || "", to: dates.at(-1) || "",
   projects: config.projects.map((p) => ({ id: p.id, briefDir: p.briefDir })), minRating: config.minRating,
   rootLabel: config.workspaceRoot,
-  note: missing ? `${missing} newer item(s) are not reviewed yet; run /whats-new again to finish them.` : "",
+  note: [missing ? `${missing} newer item(s) are not reviewed yet; run /whats-new again to finish them.` : "",
+    skipped.size ? `${skipped.size} item(s) failed ${GIVE_UP_RUNS} runs in a row and are skipped until the next plugin version or model.` : ""].filter(Boolean).join(" "),
   items: rows,
 };
 const json = JSON.stringify(data).replace(/</g, "\\u003c"); // keep fetched text from closing the script tag
@@ -40,4 +49,4 @@ const topTotal = Object.values(top).reduce((s, n) => s + n, 0);
 const before = readJson(join(DATA, "summary.json"), null)?.counters || null;
 const now = counters(rows, { evidence: readJsonl(join(DATA, "evidence.jsonl")), models: readJson(join(DATA, "models.json"), {}), profiles: readJson(join(DATA, "profile.json"), {}) });
 writeJson(join(DATA, "summary.json"), { builtAt: new Date().toISOString(), min: config.minRating, top, topTotal, total: counts, counters: now, counterJumps: jumps(before, now) });
-console.log(JSON.stringify({ page: out, items: rows.length, notYetReviewed: missing, urgency: counts }, null, 2));
+console.log(JSON.stringify({ page: out, items: rows.length, notYetReviewed: missing, skippedFailing: skipped.size, urgency: counts }, null, 2));

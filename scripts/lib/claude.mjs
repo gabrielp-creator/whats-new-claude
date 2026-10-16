@@ -1,6 +1,6 @@
 // Runs `claude -p` with NO tools, no MCP and safe mode: the lenses only read the text they are given
 // and return JSON. Arguments are passed as an array (no shell string building) wherever possible.
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 import { CWD, pickClaude, shellSafe, resolveClaude } from "./find-claude.mjs";
 
@@ -47,25 +47,68 @@ process.on("exit", () => process.stderr.write(`\nWNC_CALLS_USED=${budget.used()}
 export const callsUsed = () => budget.used();
 export const callLimit = () => budget.limit;
 
+// B-8: no call outlives the run that started it. Windows does not end a process's children when it
+// dies, and an npm install runs claude under cmd.exe, so a call is ended with its whole process tree.
+const live = new Set();
+let stopReason = "";
+function endCalls(reason) {
+  stopReason ||= reason;
+  for (const p of live) {
+    // A call that exited or was already ended is left alone: its pid may now be another process's (R-25).
+    if (p.stopped || p.exitCode !== null || p.signalCode !== null) continue;
+    p.stopped = true;
+    if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+    else try { p.kill("SIGTERM"); } catch {}
+  }
+}
+// The background update gives each paid step a deadline (WNC_DEADLINE, ms since 1970) before its own
+// timeout, because a step that timeout kills on Windows runs no exit code and its calls would run on.
+const DEADLINE = Number(process.env.WNC_DEADLINE) || 0;
+const pastDeadline = () => DEADLINE > 0 && Date.now() >= DEADLINE;
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code === "EPERM"; } };
+const PARENT = process.ppid;
+const WATCH_MS = 2000;
+let watching = false;
+function watch() {
+  if (watching) return;
+  watching = true;
+  process.on("exit", () => endCalls("the run ended"));
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP", "SIGBREAK"]) process.on(sig, () => { endCalls("the run was stopped"); process.exit(130); });
+  // The process that started this run is gone (a killed update or session): stop rather than run on.
+  setInterval(() => {
+    if (PARENT > 1 && !alive(PARENT)) { endCalls("the process that started this run ended"); process.exit(1); }
+    if (pastDeadline() && live.size) endCalls("the step deadline passed");
+  }, WATCH_MS).unref();
+}
+// A call that failed as a call, not an answer that failed its checks: lib/failing.mjs never holds
+// these against the item (B-9).
+const callError = (message) => Object.assign(new Error(message), { call: true });
+
 // Resolves with the answer text. usageLog: a .jsonl file to append this call's usage to.
 export function runClaude(input, { model, promptFile, usageLog, label = "" }) {
   const { cmd, shell } = resolveClaude();
   const args = lensArgs(model, promptFile, shell);
-  if (shell && !shellSafe([cmd, ...args])) return Promise.reject(new Error("a path contains % or a quote, which cmd.exe would change; move the plugin data folder"));
-  if (!budget.take()) return Promise.reject(new Error(budget.limit ? "call cap reached" : "no call cap given (--max-calls)"));
+  if (shell && !shellSafe([cmd, ...args])) return Promise.reject(callError("a path contains % or a quote, which cmd.exe would change; move the plugin data folder"));
+  if (pastDeadline()) return Promise.reject(callError("the step deadline passed"));
+  if (!budget.take()) return Promise.reject(callError(budget.limit ? "call cap reached" : "no call cap given (--max-calls)"));
+  watch();
   return new Promise((resolve, reject) => {
-    const p = spawn(cmd, args, { shell, cwd: CWD });
+    const p = spawn(cmd, args, { shell, cwd: CWD, windowsHide: true });
+    live.add(p);
     let out = "", err = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));
-    p.on("error", (e) => reject(new Error(`could not start claude: ${clean(e.message)}`)));
+    p.on("exit", () => live.delete(p));
+    p.on("error", (e) => { live.delete(p); reject(callError(`could not start claude: ${clean(e.message)}`)); });
     p.on("close", (code) => {
-      if (code !== 0) return reject(new Error(`claude exited ${code}: ${clean(err)}`));
+      live.delete(p);
+      if (p.stopped) return reject(callError(`call stopped: ${stopReason}`));
+      if (code !== 0) return reject(callError(`claude exited ${code}: ${clean(err)}`));
       try {
         const { text, usage } = parseResult(out);
         if (usageLog) appendFileSync(usageLog, JSON.stringify({ at: new Date().toISOString(), label, model, ...usage }) + "\n");
         resolve(text);
-      } catch (e) { reject(e); }
+      } catch (e) { reject(Object.assign(e, { call: true })); }
     });
     p.stdin.end(input);
   });

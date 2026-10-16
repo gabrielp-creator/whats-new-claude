@@ -1,8 +1,9 @@
 # Privacy policy: What's New for Claude
 
-Effective 2026-10-08. Applies to the Claude Code plugin `whats-new-claude`. Changed in version 0.3.1:
-the plugin now reads `settings.local.json` for the fixed set of facts listed under "Your Claude Code
-settings" below; before, it never opened that file.
+Effective 2026-10-08. Applies to the Claude Code plugin `whats-new-claude`. Changed in version 0.3.2:
+it also keeps `failing.json` in its data folder (see below). Changed in version 0.3.1: the plugin
+now reads `settings.local.json` for the fixed set of facts listed under "Your Claude Code settings"
+below; before, it never opened that file.
 
 The plugin has no server of its own. It runs on your computer, inside Claude Code, and its developer
 receives nothing from it: no analytics, no telemetry, no accounts.
@@ -62,7 +63,8 @@ matched names and file paths (`evidence.jsonl`), the model ids and settings fact
 (`models.json`, `profile.json`), the model status table from the deprecations page
 (`deprecations.json`), run state and summaries (`state.json`,
 `summary.json`, `updater.json`), the built page (`results.html`), a usage log of its own Claude calls
-(tokens and cost), a failure log, and the brief export when you write briefs from the page. The
+(tokens and cost), a failure log and a count of the runs each item failed in a row (`failing.json`: item ids, counts,
+the plugin version and model, and the time of the last failure), and the brief export when you write briefs from the page. The
 review page's database holds your selections, brief folders and plain-language rewrites.
 
 It keeps them until you delete them or uninstall the plugin; Claude Code deletes the plugin data

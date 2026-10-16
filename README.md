@@ -4,7 +4,7 @@ A Claude Code plugin that tells you which of Anthropic's new releases matter to 
 rates each one from 0 to 10 for each project, shows the top picks for the project you are working in,
 and turns them into ready-to-use briefs.
 
-Version 0.3.1. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
+Version 0.3.2. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
 
 ## What you see
 
@@ -126,12 +126,19 @@ change.
 - **"This folder is not one of your configured projects."** `here` matches your working folder to the
   project folders from setup. Use `--project <id>`, or rerun `/whats-new setup` to add the folder.
 - **A source FAILED.** It is retried on the next run and named in the reminder until it works. GitHub
-  rate limits are the usual cause for frequent background updates; add a read-only GitHub token in
-  `/config`.
+  rate limits are the usual cause for frequent background updates ("GitHub rate limit reached"); add a
+  read-only GitHub token in `/config`. Commits fetched before the limit was reached are kept, so each
+  retry goes on from there.
+- **"network unreachable" or "no network when the session started".** The request never reached the
+  server (the code in brackets says why, such as `ENOTFOUND`). A background update that found no
+  network at all does not count as an update, so the next session tries again.
 - **"busy: a background update is running".** Wait a few minutes; only one update runs at a time.
 - **Items show a "provisional" rating.** They have not been rated by the reviewer yet (over your
   budget, or a call failed); the next `/whats-new` rates them. Details of failed calls are in
   `failures.log` in the plugin's data folder.
+- **"skipped after failing 3 runs in a row".** The reviewer's answer for these items failed its checks
+  three runs running, so they are left out instead of costing calls every run. A new plugin version or
+  a different model in `/config` tries them again.
 - **New items wait instead of being rated in the background.** The background budget is 0 by default;
   raise it in `/config`, or run `/whats-new`, which asks before spending.
 - **A hook error at every session start.** The plugin's scripts need Node 20 or later on your `PATH`;
