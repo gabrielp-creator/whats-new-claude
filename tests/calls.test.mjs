@@ -13,6 +13,9 @@ const DRIVER = join(import.meta.dirname, "fixtures", "call-driver.mjs");
 let started = [];
 afterEach(() => { for (const pid of started) if (alive(pid)) process.kill(pid); started = []; });
 
+// Listened for at once: on Linux a driver can start its calls and exit before the test looks.
+const closed = (r) => new Promise((done) => r.on("close", done));
+
 async function callsRunning(fake, n) {
   assert.ok(await waitFor(() => fake.pids().length >= n), "the fake calls never started");
   started = fake.pids();
@@ -22,8 +25,9 @@ async function callsRunning(fake, n) {
 test("a run that exits ends its live calls (B-8)", { timeout: 30e3 }, async () => {
   const fake = fakeClaude("sleep");
   const r = spawn(process.execPath, [DRIVER, "exit"], { env: { ...fake.env, WNC_MAX_CALLS: "2", WNC_DRIVER_CALLS: "2" } });
+  const done = closed(r);
   const pids = await callsRunning(fake, 2);
-  await new Promise((done) => r.on("close", done));
+  await done;
   assert.ok(await waitFor(() => pids.every((p) => !alive(p))), `calls still running: ${pids.filter(alive)}`);
 });
 
@@ -47,10 +51,11 @@ test("past the step deadline, live calls end and new ones are refused (B-8)", { 
   const fake = fakeClaude("sleep");
   const t0 = Date.now();
   const r = spawn(process.execPath, [DRIVER], { env: { ...fake.env, WNC_MAX_CALLS: "3", WNC_DRIVER_CALLS: "2", WNC_DEADLINE: String(Date.now() + 3000) } });
+  const done = closed(r);
   let out = "";
   r.stdout.on("data", (d) => (out += d));
   const pids = await callsRunning(fake, 2);
-  await new Promise((done) => r.on("close", done));
+  await done;
   assert.ok(Date.now() - t0 < 20e3);
   const { ended, after } = JSON.parse(out);
   assert.equal(ended.length, 2);
