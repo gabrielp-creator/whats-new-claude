@@ -22,6 +22,9 @@ import { takeLock, refreshLock, releaseLock } from "./lib/lock.mjs";
 const SCRIPTS = dirname(fileURLToPath(import.meta.url));
 const DATA = dataDir();
 const STEP_TIMEOUT = 30 * 60e3;
+// B-8: a step this timeout kills runs no exit code on Windows, so its claude calls would run on. A
+// paid step gets a deadline 2 minutes earlier and ends its calls itself (lib/claude.mjs).
+const DEADLINE_MARGIN = 2 * 60e3;
 
 function input() {
   try { return JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { return {}; }
@@ -29,6 +32,7 @@ function input() {
 
 function step(script, extra = {}) {
   refreshLock(DATA);
+  if (extra.WNC_MAX_CALLS !== undefined) extra = { ...extra, WNC_DEADLINE: String(Date.now() + STEP_TIMEOUT - DEADLINE_MARGIN) };
   return stepOutcome(spawnSync(process.execPath, [join(SCRIPTS, script), "--data", DATA],
     { encoding: "utf8", env: stepEnv(script, process.env, extra), timeout: STEP_TIMEOUT, windowsHide: true }));
 }

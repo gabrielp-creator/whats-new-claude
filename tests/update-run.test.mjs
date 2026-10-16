@@ -18,6 +18,7 @@ import { join, basename } from "node:path";
 const data = process.argv[process.argv.indexOf("--data") + 1];
 const name = basename(process.argv[1], ".mjs");
 appendFileSync(join(data, "steps.log"), name + "\\n");
+appendFileSync(join(data, "deadlines.log"), name + " " + (process.env.WNC_DEADLINE || "-") + "\\n");
 const stub = JSON.parse(readFileSync(join(data, "stub.json"), "utf8"));
 // stub.state is the body of a function of the current time, so "this run" can be said in it.
 if (name === "fetch") { writeFileSync(join(data, "state.json"), JSON.stringify(Function("now", stub.state)(new Date().toISOString()))); process.exitCode = stub.fetchExit; }
@@ -63,6 +64,21 @@ test("background update within budget: check, plan, lenses, check again for thei
   const { steps, record } = runUpdate(setUp({ plan: plan(1, 1), state: OK_STATE }), 10);
   assert.deepEqual(steps, ["fetch", "enrich-commits", "verify", "plan", "lens-run", "verify", "rate-run", "build-page"]);
   assert.equal(record.incomplete, false);
+});
+
+// B-8: a step the 30-minute timeout kills on Windows runs no exit code, so its calls would run on;
+// the paid steps get a deadline before it and end their calls themselves. The free steps get none.
+test("background update: the paid steps get a deadline before the step timeout (B-8)", () => {
+  const before = Date.now();
+  const env = setUp({ plan: plan(1, 1), state: OK_STATE });
+  runUpdate(env, 10);
+  const lines = readFileSync(join(env.data, "deadlines.log"), "utf8").trim().split("\n").map((l) => l.split(" "));
+  for (const [name, at] of lines) {
+    if (name !== "lens-run" && name !== "rate-run") { assert.equal(at, "-", name); continue; }
+    const ms = Number(at) - before;
+    assert.ok(ms > 20 * 60e3 && ms < 30 * 60e3, `${name} deadline ${ms} ms after the start`);
+  }
+  assert.deepEqual(lines.filter(([n]) => n === "lens-run" || n === "rate-run").map(([n]) => n), ["lens-run", "rate-run"]);
 });
 
 test("background update with no network: stops after fetch and records offline, not an attempt (B-69)", () => {
