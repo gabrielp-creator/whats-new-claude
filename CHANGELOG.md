@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.2 (unreleased)
+## 0.3.2 (2026-10-16)
 Bug fixes only.
 - Fix: the cost question counted rating calls before the file check had refreshed its evidence, so it
   could ask about far more than would run. The file check now runs first, in `/whats-new` and in
