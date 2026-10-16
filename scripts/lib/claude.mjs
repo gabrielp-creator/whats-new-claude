@@ -52,8 +52,10 @@ export const callLimit = () => budget.limit;
 const live = new Set();
 let stopReason = "";
 function endCalls(reason) {
-  stopReason = reason;
+  stopReason ||= reason;
   for (const p of live) {
+    // A call that exited or was already ended is left alone: its pid may now be another process's (R-25).
+    if (p.stopped || p.exitCode !== null || p.signalCode !== null) continue;
     p.stopped = true;
     if (process.platform === "win32") spawnSync("taskkill", ["/PID", String(p.pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
     else try { p.kill("SIGTERM"); } catch {}
@@ -96,6 +98,7 @@ export function runClaude(input, { model, promptFile, usageLog, label = "" }) {
     let out = "", err = "";
     p.stdout.on("data", (d) => (out += d));
     p.stderr.on("data", (d) => (err += d));
+    p.on("exit", () => live.delete(p));
     p.on("error", (e) => { live.delete(p); reject(callError(`could not start claude: ${clean(e.message)}`)); });
     p.on("close", (code) => {
       live.delete(p);

@@ -3,7 +3,7 @@
 // plan's rating figure is the one that runs. B-69: a run that found no network stops after fetch.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, cpSync, writeFileSync, readFileSync, existsSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -21,7 +21,7 @@ appendFileSync(join(data, "steps.log"), name + "\\n");
 appendFileSync(join(data, "deadlines.log"), name + " " + (process.env.WNC_DEADLINE || "-") + "\\n");
 const stub = JSON.parse(readFileSync(join(data, "stub.json"), "utf8"));
 // stub.state is the body of a function of the current time, so "this run" can be said in it.
-if (name === "fetch") { writeFileSync(join(data, "state.json"), JSON.stringify(Function("now", stub.state)(new Date().toISOString()))); process.exitCode = stub.fetchExit; }
+if (name === "fetch") { if (stub.state) writeFileSync(join(data, "state.json"), JSON.stringify(Function("now", stub.state)(new Date().toISOString()))); process.exitCode = stub.fetchExit; }
 if (name === "plan") console.log(JSON.stringify(stub.plan));
 if (name === "lens-run") console.error("WNC_CALLS_USED=" + stub.plan.lensCalls);
 `;
@@ -89,6 +89,32 @@ test("background update with no network: stops after fetch and records offline, 
   assert.deepEqual(record.failed, ["a", "b"]);
   assert.equal(record.incomplete, false, "no network is not a crash");
   assert.equal(record.running, false);
+});
+
+// R-23: a fetch that crashed before writing state.json leaves the last run's state; an offline one
+// there must not hide the crash as "no network".
+test("background update whose fetch never wrote state.json: a crash, not offline (R-23)", () => {
+  const env = setUp({ plan: plan(0, 0), state: null, fetchExit: 1 });
+  const old = { sources: { a: { lastSuccess: "2026-10-01T00:00:00Z", lastError: "network unreachable (ENOTFOUND)" } } };
+  writeFileSync(join(env.data, "state.json"), JSON.stringify(old));
+  const hourAgo = new Date(Date.now() - 36e5);
+  utimesSync(join(env.data, "state.json"), hourAgo, hourAgo);
+  const { steps, record } = runUpdate(env, 10);
+  assert.deepEqual(steps, ["fetch"]);
+  assert.equal(record.offline, false);
+  assert.equal(record.incomplete, true);
+  assert.match(record.errors[0], /^fetch: /);
+});
+
+// R-21: /whats-new does not write updater.json; a summary rebuilt after the offline attempt shows it
+// fetched, so the next session follows the frequency instead of updating again at once.
+test("background update after an offline attempt and a later /whats-new run: not due again (R-21)", () => {
+  const env = setUp({ plan: plan(0, 0), state: OK_STATE });
+  const t = (min) => new Date(Date.now() - min * 6e4).toISOString();
+  writeFileSync(join(env.data, "updater.json"), JSON.stringify({ lastAttempt: t(30), finishedAt: t(30), offline: true }));
+  writeFileSync(join(env.data, "summary.json"), JSON.stringify({ builtAt: t(10) }));
+  const { steps } = runUpdate(env, 10);
+  assert.deepEqual(steps, []);
 });
 
 test("background update where one source got through: not offline, every step runs", () => {

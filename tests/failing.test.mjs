@@ -39,13 +39,23 @@ test("an answer clears the count; a new plugin version or model tries the item a
   assert.equal(run(rec, [], ["x"]).impact.x, undefined);
 });
 
-test("call failures and runs where nothing was answered are never held against an item (B-9)", () => {
+test("call failures are never held against an item; a run where nothing was answered starts no count (B-9)", () => {
   let rec = run({}, [bad("x")], ["x", "ok"]);
   rec = run(rec, [{ id: "x", error: "call cap reached", call: true }], ["x", "ok"]);
   assert.equal(rec.impact.x.runs, 1, "a call failure leaves the count as it was");
-  rec = run(rec, [bad("x"), bad("y")], ["x", "y"]);
-  assert.equal(rec.impact.x.runs, 1, "no item answered: the model or the service, not the item");
-  assert.equal(rec.impact.y, undefined);
+  rec = run(rec, [bad("y"), bad("z")], ["y", "z"]);
+  assert.equal(rec.impact.y, undefined, "no item answered: the model or the service, not the item");
+  assert.equal(rec.impact.z, undefined);
+});
+
+// R-20: once the rest is answered, the failing item is often the only one left; it already failed
+// beside answered items, so a run with it alone still counts.
+test("an item already counted keeps counting when it is the only one left (B-9, R-20)", () => {
+  let rec = run({}, [bad("x")], ["x", "ok"]);
+  for (let i = 1; i < GIVE_UP_RUNS; i++) rec = run(rec, [bad("x")], ["x"]);
+  assert.deepEqual([...skippedIds(rec, "impact", WHO)], ["x"]);
+  const other = run(run({}, [bad("x")], ["x", "ok"], { ...WHO, model: "opus" }), [bad("x")], ["x"]);
+  assert.equal(other.impact.x.runs, 1, "a count from another model does not carry into a run with nothing answered");
 });
 
 test("judgeWithSplit says whether an item failed as a call or as an answer (B-9)", async () => {

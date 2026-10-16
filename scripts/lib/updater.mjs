@@ -8,11 +8,12 @@ import { FREQUENCY_HOURS } from "./options.mjs";
 // still expires, so it cannot block updates for good.
 export const LOCK_STALE_MS = 4 * 36e5;
 
-// An attempt that found no network (offlineRun) does not count, so the next session tries again.
-export function isDue(updater, frequency, now = Date.now()) {
+// An attempt that found no network (offlineRun) does not count, so the next session tries again,
+// unless a /whats-new run has rebuilt the results since (builtAt: summary.json's, R-21).
+export function isDue(updater, frequency, now = Date.now(), builtAt) {
   const hours = Object.hasOwn(FREQUENCY_HOURS, frequency) ? FREQUENCY_HOURS[frequency] : FREQUENCY_HOURS.daily;
   if (hours === Infinity) return false;
-  if (updater?.offline) return true;
+  if (updater?.offline && !(Date.parse(builtAt || "") > Date.parse(updater.finishedAt || updater.lastAttempt || ""))) return true;
   const last = Date.parse(updater?.lastAttempt || "");
   return !Number.isFinite(last) || now - last >= hours * 36e5;
 }

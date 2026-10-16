@@ -129,3 +129,11 @@ test("isDue: an attempt that found no network does not count, so the next sessio
   assert.equal(isDue({ lastAttempt: at(1), offline: true }, "manual", NOW), false);
   assert.equal(isDue({ lastAttempt: at(1), offline: false }, "daily", NOW), false);
 });
+
+// R-21: /whats-new never writes updater.json; its rebuilt summary says the update it ran got through.
+test("isDue: after a /whats-new run that rebuilt the results, an offline attempt follows the frequency again", () => {
+  const offline = { lastAttempt: at(2), finishedAt: at(2), offline: true };
+  assert.equal(isDue(offline, "daily", NOW, at(1)), false, "a later /whats-new run fetched");
+  assert.equal(isDue(offline, "daily", NOW, at(3)), true, "the results are older than the offline attempt");
+  assert.equal(isDue(offline, "daily", NOW), true, "no summary yet");
+});
