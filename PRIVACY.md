@@ -64,7 +64,7 @@ matched names and file paths (`evidence.jsonl`), the model ids and settings fact
 (`deprecations.json`), run state and summaries (`state.json`,
 `summary.json`, `updater.json`), the built page (`results.html`), a usage log of its own Claude calls
 (tokens and cost), a failure log and a count of the runs each item failed in a row (`failing.json`: item ids, counts,
-the plugin version and model), and the brief export when you write briefs from the page. The
+the plugin version and model, and the time of the last failure), and the brief export when you write briefs from the page. The
 review page's database holds your selections, brief folders and plain-language rewrites.
 
 It keeps them until you delete them or uninstall the plugin; Claude Code deletes the plugin data

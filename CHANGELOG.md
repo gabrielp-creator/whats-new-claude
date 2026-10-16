@@ -3,9 +3,8 @@
 ## 0.3.2 (unreleased)
 Bug fixes only.
 - Fix: the cost question counted rating calls before the file check had refreshed its evidence, so it
-  could ask about far more than would run (on one real data set: 18 calls for 484 items, where 7 calls
-  for 154 ran). The file check now runs first, in `/whats-new` and in background updates, and again
-  after the reviews for the items they just tied.
+  could ask about far more than would run. The file check now runs first, in `/whats-new` and in
+  background updates, and again after the reviews for the items they just tied.
 - Fix: with no network, every source failed with "TypeError (details not shown)". The line now says
   "network unreachable" with the reason code (such as `ENOTFOUND`). A background update that finds no
   network at all stops after fetching and does not count as an update, so the next session tries
@@ -16,15 +15,16 @@ Bug fixes only.
   reached are kept, so each retry goes on from there.
 - Fix: a Claude call could outlive the run that started it: a run killed along with its background
   update or session (on Linux and macOS the whole run went on), or one stopped by the 30-minute step
-  timeout. Each call is now ended with its process tree when its run exits, is stopped, loses the
-  process that started it, or passes a deadline the background update sets before its own timeout.
+  timeout. Each call is now ended (on Windows with its whole process tree) when its run exits, is
+  stopped, loses the process that started it, or passes a deadline the background update sets before
+  its own timeout.
   Known: on Windows with an npm install of Claude Code, a call already running when its run is killed
   outright still finishes on its own.
 - An item whose reviewer answer fails its checks 3 runs in a row is now skipped instead of costing
   calls on every run; the plan, the run and the page say how many, and a new plugin version or model
-  tries it again. A call that failed as a call, or a run in which no item got an answer, never counts
-  against an item. New file in the data folder: `failing.json` (item ids, counts, plugin version and
-  model).
+  tries it again. A call that failed as a call never counts against an item, and a run in which no
+  item got an answer starts no count. New file in the data folder: `failing.json` (item ids, counts,
+  the plugin version and model, and the time of the last failure).
 
 ## 0.3.1 (2026-10-14)
 - Fix: provenance. A plugin in the official marketplace counts as Anthropic-published only from its
