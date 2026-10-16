@@ -136,6 +136,9 @@ change.
 - **Items show a "provisional" rating.** They have not been rated by the reviewer yet (over your
   budget, or a call failed); the next `/whats-new` rates them. Details of failed calls are in
   `failures.log` in the plugin's data folder.
+- **"skipped after failing 3 runs in a row".** The reviewer's answer for these items failed its checks
+  three runs running, so they are left out instead of costing calls every run. A new plugin version or
+  a different model in `/config` tries them again.
 - **New items wait instead of being rated in the background.** The background budget is 0 by default;
   raise it in `/config`, or run `/whats-new`, which asks before spending.
 - **A hook error at every session start.** The plugin's scripts need Node 20 or later on your `PATH`;

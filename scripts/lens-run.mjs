@@ -8,7 +8,8 @@
 // Usage: node lens-run.mjs [lens=all] --max-calls <n> [--data <dir>]
 import { readFileSync, writeFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { dataDir, positional, readJsonl, PLUGIN_ROOT } from "./lib/store.mjs";
+import { dataDir, positional, readJsonl, readJson, writeJson, PLUGIN_ROOT, PLUGIN_VERSION } from "./lib/store.mjs";
+import { FAILING_FILE, GIVE_UP_RUNS, skippedIds, recordRun } from "./lib/failing.mjs";
 import { loadConfig, projectsProfile } from "./lib/config.mjs";
 import { runClaude, callsUsed, callLimit } from "./lib/claude.mjs";
 import { lensItems } from "./lib/rows.mjs";
@@ -66,20 +67,32 @@ const items = lensItems(DATA);
 const lenses = WHICH === "all" ? Object.keys(SCHEMAS) : [WHICH];
 if (!callLimit()) throw new Error("pass --max-calls <n>: the number of Claude calls the user approved");
 let failures = [];
+// B-9: items whose answer failed GIVE_UP_RUNS runs in a row are skipped (lib/failing.mjs).
+let failing = readJson(join(DATA, FAILING_FILE), {});
+const who = { version: PLUGIN_VERSION, model: config.model };
+const skipped = new Set();
+const runs = [];
 await Promise.all(lenses.map(async (lens) => {
   if (!SCHEMAS[lens]) throw new Error(`unknown lens ${lens}`);
   const promptFile = join(DATA, `.lens-${lens}.md`);
   writeFileSync(promptFile, readFileSync(join(PLUGIN_ROOT, "lenses", "_shared.md"), "utf8") + "\n" + readFileSync(join(PLUGIN_ROOT, "lenses", `${lens}.md`), "utf8"));
   const out = join(DATA, `lens-${lens}.jsonl`);
   const done = new Set(readJsonl(out).map((r) => r.id));
-  const todo = items.filter((i) => !done.has(i.id));
-  console.log(`lens ${lens}: ${todo.length} items in ${Math.ceil(todo.length / BATCH)} batches`);
+  const skip = skippedIds(failing, lens, who);
+  const open = items.filter((i) => !done.has(i.id));
+  const todo = open.filter((i) => !skip.has(i.id));
+  for (const i of open) if (skip.has(i.id)) skipped.add(i.id);
+  console.log(`lens ${lens}: ${todo.length} items in ${Math.ceil(todo.length / BATCH)} batches${todo.length < open.length ? `; ${open.length - todo.length} skipped` : ""}`);
   const r = await runBatches((batch) => judge(lens, promptFile, batch), todo, BATCH, CONC, out);
-  failures.push(...r.failures.map((f) => `${lens} ${f}`));
+  runs.push({ lens, tried: todo.map((i) => i.id), failures: r.failures });
+  failures.push(...r.failures.map((f) => `${lens} ${f.id}: ${f.error}`));
 }));
+for (const r of runs) failing = recordRun(failing, r.lens, { ...r, ...who });
+writeJson(join(DATA, FAILING_FILE), failing);
 if (failures.length) {
   appendFileSync(join(DATA, "failures.log"), failures.map((f) => `${new Date().toISOString()} ${f}`).join("\n") + "\n");
   console.log(`\n${failures.length} item answer(s) still failing (details in failures.log; rerun to retry).`);
   process.exitCode = 1;
-} else console.log("\nAll items have answers from every lens.");
+} else if (!skipped.size) console.log("\nAll items have answers from every lens.");
+if (skipped.size) console.log(`\n${skipped.size} item(s) skipped after failing ${GIVE_UP_RUNS} runs in a row; a new plugin version or model tries them again (details in failures.log).`);
 console.log(`Claude calls used: ${callsUsed()} of ${callLimit()} allowed.`);

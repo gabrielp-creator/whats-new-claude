@@ -92,10 +92,13 @@ If the output says the results are old, offer **Update now**.
    it is approved by their limit). If `calls` is 0, skip to step 10.
 8. `run lens-run --max-calls <calls + 3>`. The cap is enforced in code; the 3 covers retries. It
    prints `Claude calls used: N`. If it reports failures, say how many and that the next run retries.
+   If it reports items skipped after failing 3 runs in a row, say how many and that a new plugin
+   version or model tries them again.
 9. `run verify` again, for the items the lenses just reviewed.
 10. `run rate-run --max-calls <calls + 3 - N>` (N from step 8; 0 if step 8 was skipped and `calls` is
    0). It gives urgent and soon items an overall 0 to 10 rating per project, inside limits set by
-   code; any it could not rate keep a provisional score and are retried next run.
+   code; any it could not rate keep a provisional score and are retried next run, except those it
+   reports skipped after failing 3 runs in a row (say how many, as in step 8).
 11. Do **page**, then `run lock release`.
 12. `run show here`, and show its output as it is (if the working directory is not a configured
    project, it says so; that is fine).
