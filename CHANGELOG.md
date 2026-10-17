@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3
+Documentation only; no change to what the plugin runs, fetches, reads or sends.
+- README: a first screen that says what it is for, why it differs from reading the changelogs, what
+  it costs (with first-run call counts measured on 2026-10-17) and why you can trust it; a CI badge;
+  the directory status (submitted, not yet listed); the examples marked as illustrative.
+- SECURITY.md: prompt-injection reports are in scope.
+- `plugin.json`: the author's website and the listing icon for Anthropic's directory.
+- As with any new version, items skipped after failing 3 runs in a row are tried again once.
+
 ## 0.3.2 (2026-10-16)
 Bug fixes only.
 - Fix: the cost question counted rating calls before the file check had refreshed its evidence, so it

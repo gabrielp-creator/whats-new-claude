@@ -1,10 +1,34 @@
 # What's New for Claude
 
-A Claude Code plugin that tells you which of Anthropic's new releases matter to **your** projects. It
-rates each one from 0 to 10 for each project, shows the top picks for the project you are working in,
-and turns them into ready-to-use briefs.
+[![tests](https://github.com/gabrielp-creator/whats-new-claude/actions/workflows/test.yml/badge.svg)](https://github.com/gabrielp-creator/whats-new-claude/actions/workflows/test.yml)
 
-Version 0.3.2. Works in Claude Code only (it runs local scripts). An independent project, not made by or affiliated with Anthropic.
+Tells you when an Anthropic release affects one of **your** projects, such as a model id your code
+pins being retired or a Claude Code change to the hooks you use, and writes a brief for what to do
+about it. A Claude Code plugin: it rates each release from 0 to 10 for each project and shows the top
+picks for the project you are working in.
+
+Version 0.3.3. Works in Claude Code only (it runs local scripts). An independent project, not made by
+or affiliated with Anthropic. Submitted to Anthropic's plugin directory, not yet listed: install it
+from this repository (see [Setup](#setup)).
+
+**Why not just read the changelogs?** A feed tells you what shipped. This tells you whether it is in
+your code: it looks up the model ids, packages, settings keys and hook names from each release in
+your project folders, on your machine, and a release whose names are not in a project's files cannot
+be a top pick for it. It reads eight Anthropic sources so you don't have to.
+
+**What it costs.** Reviews and ratings are `claude -p` calls on your own Claude account. A typical
+day of releases (about 60 items) takes about 4 calls. The first run is larger: measured on
+2026-10-17, looking back 30 days meant 2,420 items and about 143 calls, and 7 days meant 446 items
+and about 30 calls. Above your limit (30 by default) it shows the number and asks first. Background
+updates fetch on your schedule but spend nothing unless you set a budget. Details in
+[What it costs](#what-it-costs).
+
+**Why you can trust it.** No server, no telemetry and no npm dependencies. It fetches only from
+`api.github.com`, `platform.claude.com` and `www.anthropic.com`. The Claude calls that judge release
+text have no tools; release text that reaches your session is shortened and labelled as data. It never edits your
+settings, hooks, skills, plugins or code. About 4,100 lines of Node in `scripts/`, with tests on
+Windows, macOS and Linux. See [What it reads, sends and writes](#what-it-reads-sends-and-writes),
+[PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
 ## What you see
 
@@ -25,6 +49,8 @@ Options: `here --min 8.5 --days 14 --project <id>`, `news --days 3`,
 `export --min 9 --project <id>`. The command shows as `/whats-new-claude:whats-new`.
 
 ## Examples
+
+Illustrative: the project names and ratings show the kind of result, not a specific run.
 
 1. **A model you use is being retired.** You open a session in your web app. The reminder says
    "1 top pick for web-app". `/whats-new here` shows it rated 8.8: the model id your code pins is
@@ -83,8 +109,11 @@ Requires Claude Code 2.1.271 or later and Node 20 or later.
 
 Fetching, the file check, `here`, `news` and `export` are free. Reviewing and rating make `claude -p`
 calls on **your own Claude account**: about 4 calls for a typical day of releases (about 60 items).
-The first run over 30 days of releases is larger; `/whats-new` shows the number and asks first above
-your limit. Background updates spend only up to the budget you set (default: nothing), with a hard cap
+The first run is larger, and most of it is Claude Code's changelog. Measured on 2026-10-17 with
+0.3.2 (fetch, file check and plan only, no calls made): 30 days back was 2,420 items (2,158 from
+Claude Code) and 143 calls (126 reviews, 17 ratings); 7 days back was 446 items and 30 calls. The
+rating figure is an estimate until the reviews have run. `/whats-new` shows the number and asks first
+above your limit. Background updates spend only up to the budget you set (default: nothing), with a hard cap
 in code. Plain-language rewrites on the page run only when you click for them.
 
 ## What it reads, sends and writes
